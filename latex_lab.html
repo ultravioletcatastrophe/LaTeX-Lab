@@ -6,23 +6,64 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
 
 <!-- KaTeX -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 
-<!-- Computer Modern for Mixed mode text + PNG clone -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/cmu-serif.min.css">
+<!-- Computer Modern for Mixed mode text -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/cmu-serif.min.css" crossorigin="anonymous">
 
-<!-- html2canvas for PNG export -->
+<!-- html2canvas and html-to-image for PNG export -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<!-- <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
 
-<!-- PDF export disabled; keeping library reference here commented for future use -->
-<!-- <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script> -->
+<!-- KaTeX faces commonly used -->
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff2" crossorigin>
+
+<!-- CMU Serif for Mixed-mode plain text -->
+<link rel="preload" as="font" type="font/woff2"
+      href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2"
+      href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2" crossorigin>
 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
+@font-face{
+  font-family:"CMU Serif";
+  src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2") format("woff2");
+  font-weight:500;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"CMU Serif";
+  src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-italic.woff2") format("woff2");
+  font-weight:500;
+  font-style:italic;
+  font-display:swap;
+}
+@font-face{
+  font-family:"CMU Serif";
+  src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2") format("woff2");
+  font-weight:700;
+  font-style:normal;
+  font-display:swap;
+}
+@font-face{
+  font-family:"CMU Serif";
+  src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-italic.woff2") format("woff2");
+  font-weight:700;
+  font-style:italic;
+  font-display:swap;
+}
+
+
 :root{
   --bg:#ffffff; --text:#111; --gutter-bg:#f4f4f4; --gutter-text:#888;
   --stripe-light: rgba(0,0,0,.03);
@@ -124,7 +165,7 @@ body.dark #divider{ color:#bbb }
   background:transparent; display:flex; align-items:center; justify-content:space-between; padding:0 9px;
 }
 .switch.mode .thumb{
-  position:absolute; top:50%; left:4px; width:60px; height:30px; /* wider thumb hides inactive text */
+  position:absolute; top:50%; left:4px; width:60px; height:30px;
   background:#fff; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,.22);
   transform:translate(0,-50%); transition:transform .18s;
 }
@@ -133,12 +174,9 @@ body.dark .switch.mode .thumb{ background:#2a2a2a }
   display:flex; flex-direction:column; align-items:center; line-height:1.0;
   font-size:10px; font-weight:700; opacity:.45; transition:opacity .18s; user-select:none;
 }
-/* hairline optical nudge so text looks centered */
 .switch.mode .stack { transform: translateY(-0.5px); }
-/* Left = SOME MATH (Mixed), Right = ALL MATH (Classic) */
 #modeToggle:checked + .track .stack.all{opacity:1}
 #modeToggle:not(:checked) + .track .stack.some{opacity:1}
-/* Classic checked => thumb LEFT hidden SOME; Mixed => thumb RIGHT hidden ALL */
 #modeToggle:not(:checked) + .track .thumb{transform:translate(50px,-50%)}
 
 /* Dark slider (compact) */
@@ -182,11 +220,13 @@ body.dark .switch.dark .thumb{ background:#2a2a2a }
 }
 .modal .actions{display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem}
 
-/* Mixed mode: plain text in preview uses Computer Modern */
-body.mixed #preview { font-family: "CMU Serif", serif; }
-body.mixed #preview .katex { font-family: inherit; } /* keep KaTeX fonts separate */
+/* Mixed mode: plain text uses Computer Modern; KaTeX keeps its own fonts */
+body.mixed #preview { font-family: "CMU Serif"; font-weight: 500;}
+/* NOTE: intentionally NOT overriding .katex font-family */
+
 /* Larger non-math font size in Mixed mode preview */
 body.mixed #preview { font-size:20px; line-height:1.4; }
+
 /* Make whole pill clickable and prevent the thumb from swallowing clicks */
 .switch .track { cursor: pointer; }
 .switch .thumb { pointer-events: none; }
@@ -231,8 +271,6 @@ body.mixed #preview { font-size:20px; line-height:1.4; }
 body.dark .welcome-pop { background: #1e1e1e; }
 @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
 @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
-
-
 </style>
 </head>
 <body>
@@ -300,7 +338,7 @@ body.dark .welcome-pop { background: #1e1e1e; }
     </div>
 
     <button id="pngBtn">🖼️ PNG</button>
-    <!-- <button id="pdfBtn">📄 PDF</button> --> <!-- PDF export disabled -->
+    <!-- <button id="pdfBtn">📄 PDF</button> -->
     <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
   </div>
 </div>
@@ -460,13 +498,10 @@ macrosSave.addEventListener('click', (e) => {
 });
 
 // Close modals on backdrop/Esc
-
-// Backdrop click to close
 matrixModal.addEventListener('click', (e) => { if (e.target === matrixModal) matrixModal.classList.remove('show'); });
 tableModal.addEventListener('click',  (e) => { if (e.target === tableModal)  tableModal.classList.remove('show'); });
 macrosModal.addEventListener('click', (e) => { if (e.target === macrosModal) macrosModal.classList.remove('show'); });
 
-// Close any open modal on Esc (extend your existing keydown listener, or add this)
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (matrixModal.classList.contains('show')) { matrixModal.classList.remove('show'); return; }
@@ -567,11 +602,9 @@ function rebuildGuidesWrapping(){
   const stripeBG = getComputedStyle(document.body).getPropertyValue('--stripe-light');
 
   for (let i = 0; i < lines.length; i++){
-    // measure painted height of this logical line
     measure.textContent = lines[i] || ' ';
     const h = Math.max(lh, measure.getBoundingClientRect().height || lh);
 
-    // gutter line number block
     const gn = document.createElement('div');
     gn.className = 'ln';
     gn.textContent = i + 1;
@@ -579,7 +612,6 @@ function rebuildGuidesWrapping(){
     gn.style.lineHeight = h + 'px';
     gutter.appendChild(gn);
 
-    // overlay stripes that add up to h
     const rows = Math.max(1, Math.ceil(h / lh));
     const bg = (i % 2) ? stripeBG : 'transparent';
     for (let r = 0; r < rows; r++){
@@ -601,7 +633,6 @@ function render(){
   const lines = editor.value.split('\n');
 
   if (mode === 'classic'){
-    // Classic: every line is display math
     for (const line of lines){
       if (line.trim() === '') { preview.appendChild(document.createElement('br')); continue; }
       const div = document.createElement('div');
@@ -610,7 +641,6 @@ function render(){
       preview.appendChild(div);
     }
   } else {
-    // Mixed: plain text with $...$ / $$...$$ rendered inline/display
     for (const line of lines){
       if (line.trim() === '') { preview.appendChild(document.createElement('br')); continue; }
       const wrap = document.createElement('div');
@@ -654,13 +684,13 @@ modeToggle.addEventListener('change', () => {
     : 'Type text with $inline$ and $$display$$ math';
   document.body.classList.toggle('mixed',   mode === 'mixed');
   document.body.classList.toggle('classic', mode === 'classic');
-  try { localStorage.setItem(LS_MODE, mode); } catch(e){}
+  try { localStorage.setItem(LS_MODE, mode); } catch(e) {}
   render();
 });
 darkToggle.addEventListener('change', () => {
   const isDark = darkToggle.checked;
   document.body.classList.toggle('dark', isDark);
-  try { localStorage.setItem(LS_DARK, isDark ? '1' : '0'); } catch(e){}
+  try { localStorage.setItem(LS_DARK, isDark ? '1' : '0'); } catch(e) {}
   render();
 });
 
@@ -674,7 +704,6 @@ editor.addEventListener('keydown', (e) => {
   const lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
   if (!e.shiftKey) {
-    // indent
     if (start === end) {
       editor.setRangeText('  ', start, end, 'end');
       editor.selectionStart = editor.selectionEnd = start + 2;
@@ -686,7 +715,6 @@ editor.addEventListener('keydown', (e) => {
       editor.selectionEnd = end + delta;
     }
   } else {
-    // outdent (remove up to 2 leading spaces per line)
     const re = /^ {1,2}/gm;
     const before = val.slice(lineStart, end);
     const block = before.replace(re, '');
@@ -704,7 +732,6 @@ function triggerDownload(url, filename){
   a.href = url;
   a.download = filename;
   a.rel = 'noopener';
-  // some browsers ignore click() unless it's in the DOM
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -717,12 +744,10 @@ function saveCanvasPNG(canvas, filename){
         if (!blob) { resolve(false); return; }
         const blobUrl = URL.createObjectURL(blob);
         triggerDownload(blobUrl, filename);
-        // give the download a moment, then revoke
         setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
         resolve(true);
       }, 'image/png');
     } else {
-      // fallback for very old browsers
       const dataUrl = canvas.toDataURL('image/png');
       triggerDownload(dataUrl, filename);
       resolve(true);
@@ -730,191 +755,234 @@ function saveCanvasPNG(canvas, filename){
   });
 }
 
-/* ===== PNG export (clone preview, normalize margins, wrap with padding) ===== */
-// Helper: does this child contain real content (KaTeX or non-whitespace text)?
+/* ===== Helpers ===== */
+// Builds a <style> element with the font-face rules the snapshot needs.
+function buildFontFaceStyleEl() {
+  const css = [
+    '@font-face{font-family:KaTeX_Main; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2) format("woff2"); font-weight:400; font-style:normal; font-display:swap;}',
+    '@font-face{font-family:KaTeX_Main; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2) format("woff2"); font-weight:400; font-style:italic; font-display:swap;}',
+    '@font-face{font-family:KaTeX_Math; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2) format("woff2"); font-weight:400; font-style:italic; font-display:swap;}',
+    '@font-face{font-family:KaTeX_AMS; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2) format("woff2"); font-weight:400; font-style:normal; font-display:swap;}',
+    '@font-face{font-family:KaTeX_Size1; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff2) format("woff2"); font-weight:400; font-style:normal; font-display:swap;}',
+    '@font-face{font-family:KaTeX_Size2; src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff2) format("woff2"); font-weight:400; font-style:normal; font-display:swap;}',
+    /* Computer Modern serif for Mixed-mode plain text */
+    '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2) format("woff2"); font-weight:500; font-style:normal; font-display:swap;}',
+  ].join('\n');
+
+  const el = document.createElement('style');
+  el.type = 'text/css';
+  el.appendChild(document.createTextNode(css));
+  return el;
+}
+
 function isMeaningfulLine(el) {
   if (!el) return false;
-  // Any KaTeX content counts as meaningful
   if (el.querySelector && el.querySelector('.katex')) return true;
-  // Any text with non-whitespace chars counts as meaningful
   if ((el.textContent || '').trim().length > 0) return true;
   return false;
 }
-
-
-// Helper: remove leading/trailing empty children; keep internal blanks
 function trimLeadingTrailingBlanks(containerEl) {
   const kids = Array.from(containerEl.children);
   let i = 0, j = kids.length - 1;
-
-  // advance from the top until we hit a meaningful line
   while (i <= j && !isMeaningfulLine(kids[i])) i++;
-  // retreat from the bottom until we hit a meaningful line
   while (j >= i && !isMeaningfulLine(kids[j])) j--;
-
-  // remove those outside [i, j]
   for (let k = 0; k < i; k++) containerEl.removeChild(kids[k]);
   for (let k = kids.length - 1; k > j; k--) containerEl.removeChild(kids[k]);
 }
 
-/* --- PNG export (offscreen clone, mode-aware padding, trims edge blanks) --- */
-async function exportPNG(){
+/* Preload critical fonts to keep html-to-image letter metrics correct */
+async function preloadFonts() {
+  const probe = document.createElement('div');
+  Object.assign(probe.style, {
+    position:'fixed', left:'-9999px', top:'0', opacity:'0', pointerEvents:'none'
+  });
+  const families = [
+    '"CMU Serif"',
+    'KaTeX_Main', 'KaTeX_Math', 'KaTeX_AMS', 'KaTeX_SansSerif',
+    'KaTeX_Script', 'KaTeX_Fraktur', 'KaTeX_Typewriter', 'KaTeX_Caligraphic'
+  ];
+  probe.innerHTML = families.map(f => `<span style="font-family:${f};font-weight:400">A1</span>`).join('');
+  document.body.appendChild(probe);
+  try {
+    if (document.fonts && document.fonts.ready) {
+      await Promise.race([document.fonts.ready, new Promise(r=>setTimeout(r, 800))]);
+    } else {
+      await new Promise(r=>setTimeout(r, 300));
+    }
+  } catch {}
+  probe.remove();
+}
+
+/* Convert data URL to Blob (Safari-friendly) */
+function dataUrlToBlob(dataUrl) {
+  const [meta, b64] = dataUrl.split(',');
+  const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
+  const bin = atob(b64);
+  const u8  = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: mime });
+}
+
+const raf = () => new Promise(r => requestAnimationFrame(r));
+async function settleLayout() {
+  await raf(); await raf(); // two paints
+  if (document.fonts && document.fonts.ready) {
+    try { await Promise.race([document.fonts.ready, new Promise(r=>setTimeout(r, 500))]); } catch {}
+  }
+}
+
+/* ===== PNG export (html-to-image primary, fonts preserved) ===== */
+async function exportPNG() {
   const bg = getComputedStyle(preview).backgroundColor || getComputedStyle(document.body).backgroundColor;
 
-  // 1) clone preview and make it shrink-wrap
-  const clone = preview.cloneNode(true);
-  clone.removeAttribute('id');
-  Object.assign(clone.style, {
-    position: 'absolute',
-    left: '-99999px',
-    top: '0',
+  // Build sandbox ON viewport (opacity 0) to avoid WebKit blanking
+  const sandbox = document.createElement('div');
+  Object.assign(sandbox.style, {
+    position: 'fixed',
+    left: '0',
+    top:  '0',
+    opacity: '0',
+    pointerEvents: 'none',
     display: 'inline-block',
-    width: 'auto',
-    minWidth: '0',
-    height: 'auto',
-    maxWidth: 'none',
-    whiteSpace: 'pre-wrap',
-    tabSize: '4', // optional: pick 2/4/8 as you like
-    flex: 'none',
-    overflow: 'visible',
-    background: bg,
-    padding: '0',
-    margin: '0',
-    fontFamily: '"CMU Serif"'
+    background: bg
   });
 
-  // inner wrapper controls padding
+  // ⬇️ Inject @font-face rules so the snapshot can resolve KaTeX/CMU fonts
+  sandbox.appendChild(buildFontFaceStyleEl());
+
+  // ⬇️ Force WebKit to use currentColor for text during foreignObject render
+  const webkitFillFix = document.createElement('style');
+  webkitFillFix.textContent = `
+    *, *::before, *::after { -webkit-text-fill-color: currentColor !important; }
+  `;
+  sandbox.appendChild(webkitFillFix);
+
+  // Wrapper controls padding/crop
   const wrapper = document.createElement('div');
   wrapper.style.display = 'inline-block';
+  wrapper.style.whiteSpace = 'pre-wrap';
+  wrapper.style.tabSize = '4';
+
+  // --- Bake DPI into typography (kerning-safe) ---
+  {
+    const cps = getComputedStyle(preview);
+
+    // base metrics from preview
+    const baseSizePx = parseFloat(cps.fontSize) || 16;
+    const baseLHpx   = cps.lineHeight.endsWith('px')
+      ? parseFloat(cps.lineHeight)
+      : baseSizePx * 1.5;
+
+    // scale we’ll bake into text metrics instead of device pixelRatio
+    const SCALE = Math.max(1, EXPORT_SCALE | 0);
+
+    // essential inherited styles
+    wrapper.style.fontFamily          = cps.fontFamily;
+    const textColor = cps.color || '#111';
+    wrapper.style.color           = textColor;
+    wrapper.style.webkitTextFillColor = textColor;   // <- Safari snapshot fix
+    wrapper.style.backgroundColor     = cps.backgroundColor;  // ← add this
+    // IMPORTANT: normalize whitespace so incidental spaces don’t balloon
+    wrapper.style.whiteSpace          = 'normal';
+    wrapper.style.tabSize             = '4';
+
+    // kerning/shaping defaults
+    wrapper.style.fontKerning         = 'normal';
+    wrapper.style.fontFeatureSettings = '"kern" 1';
+    wrapper.style.textRendering       = 'optimizeLegibility';
+
+    // bake scale into metrics (this preserves kerning)
+    wrapper.style.fontSize   = (baseSizePx * SCALE) + 'px';
+    wrapper.style.lineHeight = (baseLHpx   * SCALE) + 'px';
+  }
+
+  // Padding around snapshot
   const isClassic = (mode === 'classic');
-  const padTop    = isClassic ? 2 : 6;
-  const padBottom = isClassic ? 2 : 6;
-  const padSides  = 8;
+  const padTop    = isClassic ? 20 : 20;
+  const padBottom = isClassic ? 20 : 20;
+  const padSides  = 20;
   wrapper.style.padding = `${padTop}px ${padSides}px ${padBottom}px ${padSides}px`;
 
+  // Clone preview children into wrapper
+  const clone = preview.cloneNode(true);
   while (clone.firstChild) wrapper.appendChild(clone.firstChild);
-  clone.appendChild(wrapper);
 
-  document.body.appendChild(clone);
+  // Normalize KaTeX block spacing in snapshot
+  wrapper.querySelectorAll('.katex-display').forEach(el => {
+    el.style.marginTop = '0';
+    el.style.marginBottom = '0';
+  });
+  wrapper.querySelectorAll('img, svg, canvas').forEach(el => {
+    el.style.display = 'inline-block';
+    el.style.verticalAlign = 'baseline';
+  });
+
+  // Trim leading/trailing blank lines
+  trimLeadingTrailingBlanks(wrapper);
+
+  // Bail if empty
+  const meaningful = Array.from(wrapper.children).some(el =>
+    (el.querySelector && el.querySelector('.katex')) || ((el.textContent || '').trim().length > 0)
+  );
+  if (!meaningful) { alert('Nothing to export yet — add some text or math first.'); return; }
+
+  sandbox.appendChild(wrapper);
+  document.body.appendChild(sandbox);
 
   try {
-    // normalize KaTeX display margins
-    clone.querySelectorAll('.katex-display').forEach(el => {
-      el.style.marginTop = '0';
-      el.style.marginBottom = '0';
-    });
+    await preloadFonts();
+    await settleLayout();
 
-    // trim only leading/trailing blanks (keep internal blanks)
-    trimLeadingTrailingBlanks(wrapper);
+    // Measure AFTER scaling font metrics
+    const rect = wrapper.getBoundingClientRect();
+    const w = Math.ceil(rect.width);
+    const h = Math.ceil(rect.height);
+    if (w <= 0 || h <= 0) throw new Error('zero-size after layout');
 
-    // bail if nothing meaningful remains
-    const meaningful = Array.from(wrapper.children).some(isMeaningfulLine);
-    if (!meaningful) {
-      alert('Nothing to export yet — add some text or math first.');
+    if (window.htmlToImage?.toPng) {
+      const url = await window.htmlToImage.toPng(wrapper, {
+        pixelRatio: 2,             // render 1:1; we already scaled CSS text
+        backgroundColor: bg,
+        cacheBust: true,
+        width:  w,
+        height: h,
+        fetchRequestInit: { mode: 'cors', credentials: 'omit' },
+        style: { transform: 'none' }
+      });
+      const blobUrl = URL.createObjectURL(dataUrlToBlob(url));
+      triggerDownload(blobUrl, stampName('png'));
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
       return;
     }
 
-    // render and download
-    const canvas = await html2canvas(clone, {
+    // html2canvas fallback (also 1:1)
+    const canvas = await html2canvas(wrapper, {
       backgroundColor: bg,
-      scale: EXPORT_SCALE || 4,
-      useCORS: true   // harmless; helps if someone injects remote assets later
+      scale: 1,                  // no device upscaling
+      width: w,
+      height: h,
+      useCORS: true,
+      foreignObjectRendering: false
     });
-
     await saveCanvasPNG(canvas, stampName('png'));
-  } finally {
-    document.body.removeChild(clone);
-  }
-}
-
-
-/* ===== PDF export (disabled; kept for reference) =====
-   This block handled vertical slicing across multiple pages and
-   a page background fill to match light/dark mode.
-
-   To re-enable:
-   1) Uncomment the jsPDF <script> in <head>.
-   2) Uncomment the button + event listener.
-   3) Uncomment this function.
------------------------------------------------------------------
-async function exportPDF(){
-  const bg   = getComputedStyle(preview).backgroundColor || getComputedStyle(document.body).backgroundColor;
-
-  // Measure a vertical crop region from first/last visible content
-  function measureVisibleBounds(container) {
-    const kids  = Array.from(container.children);
-    const cRect = container.getBoundingClientRect();
-    let first = null, last = null;
-    for (const el of kids) {
-      if (!el || !el.offsetHeight) continue;
-      const hasText  = (el.textContent || '').trim().length > 0;
-      const hasKaTeX = el.querySelector ? !!el.querySelector('.katex') : false;
-      if (!hasText && !hasKaTeX) continue;
-      if (!first) first = el; last = el;
+  } catch (err) {
+    console.warn('Export failed, attempting html2canvas fallback:', err);
+    try {
+      const canvas = await html2canvas(sandbox, {
+        backgroundColor: bg,
+        scale: 1,
+        useCORS: true,
+        foreignObjectRendering: false
+      });
+      await saveCanvasPNG(canvas, stampName('png'));
+    } catch (err2) {
+      console.error('Fallback export failed:', err2);
+      alert('PNG export failed. (See console for details.)');
     }
-    if (!first || !last) return { x:0, y:0, width:container.clientWidth, height:container.clientHeight };
-    const fRect = first.getBoundingClientRect();
-    const lRect = last.getBoundingClientRect();
-    const yTop = Math.max(0, Math.min(container.clientHeight, fRect.top    - cRect.top));
-    const yBot = Math.max(0, Math.min(container.clientHeight, lRect.bottom - cRect.top));
-    const padY = 10;
-    return { x:0, y:Math.max(0, yTop - padY), width:container.clientWidth, height:Math.max(1, (yBot - yTop) + padY*2) };
+  } finally {
+    document.body.removeChild(sandbox);
   }
-  function cropCanvasToRect(srcCanvas, rectCSSPx, cssW, cssH) {
-    const scaleX = srcCanvas.width  / cssW;
-    const scaleY = srcCanvas.height / cssH;
-    const sx = Math.round(rectCSSPx.x      * scaleX);
-    const sy = Math.round(rectCSSPx.y      * scaleY);
-    const sw = Math.round(rectCSSPx.width  * scaleX);
-    const sh = Math.round(rectCSSPx.height * scaleY);
-    const dst = document.createElement('canvas');
-    dst.width  = Math.max(1, Math.min(srcCanvas.width  - sx, sw));
-    dst.height = Math.max(1, Math.min(srcCanvas.height - sy, sh));
-    dst.getContext('2d').drawImage(srcCanvas, sx, sy, dst.width, dst.height, 0, 0, dst.width, dst.height);
-    return dst;
-  }
-
-  const crop = measureVisibleBounds(preview);
-  const { jsPDF } = window.jspdf;
-  const PDF_SCALE = Math.min(4, EXPORT_SCALE || 4);
-  const full    = await html2canvas(preview, { backgroundColor: bg, scale: PDF_SCALE });
-  const cropped = cropCanvasToRect(full, crop, preview.clientWidth, preview.clientHeight);
-
-  const pdf = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait' });
-  const pageSize = pdf.internal.pageSize;
-  const pageW = pageSize.getWidth ? pageSize.getWidth() : pageSize.width;
-  const pageH = pageSize.getHeight ? pageSize.getHeight() : pageSize.height;
-  const MARGIN = 24;
-  const drawW = pageW - MARGIN * 2;
-  const scale = drawW / cropped.width;
-  const drawHMax = pageH - MARGIN * 2;
-  const srcHPerPage = Math.floor(drawHMax / scale);
-  const MAX_SLICE_SRC_PX = 1800;
-
-  const [r,g,b] = (function rgbaToRgbArray(c){ const m=c.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i); return m?[+m[1],+m[2],+m[3]]:[255,255,255]; })(bg);
-
-  let ySrc = 0, isFirst = true;
-  while (ySrc < cropped.height) {
-    const remaining = cropped.height - ySrc;
-    const thisSrcH = Math.min(remaining, srcHPerPage, MAX_SLICE_SRC_PX);
-
-    const slice = document.createElement('canvas');
-    slice.width  = cropped.width;
-    slice.height = thisSrcH;
-    slice.getContext('2d').drawImage(cropped, 0, ySrc, cropped.width, thisSrcH, 0, 0, slice.width, slice.height);
-
-    if (!isFirst) pdf.addPage([pageW, pageH], 'portrait');
-    isFirst = false;
-
-    pdf.setFillColor(r,g,b);
-    pdf.rect(0, 0, pageW, pageH, 'F');
-
-    pdf.addImage(slice, 'PNG', MARGIN, MARGIN, drawW, thisSrcH * scale);
-    ySrc += thisSrcH;
-  }
-  pdf.save(stampName('pdf'));
 }
------------------------------------------------------------------ */
 
 /* ===== Common utils ===== */
 function stampName(ext){
@@ -922,14 +990,9 @@ function stampName(ext){
   const pad = n => String(n).padStart(2,'0');
   return `latex-lab-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.${ext}`;
 }
-function rgbaToRgbArray(c){
-  const m=c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-  return m?[+m[1],+m[2],+m[3]]:[255,255,255];
-}
 
 /* ===== Export buttons ===== */
 pngBtn.addEventListener('click', exportPNG);
-// pdfBtn.addEventListener('click', exportPDF); // PDF disabled
 
 /* ===== Clear ===== */
 clearBtn.addEventListener('click', () => {
@@ -940,7 +1003,6 @@ clearBtn.addEventListener('click', () => {
   try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
   render();
 });
-
 
 /* ===== Resizable split (persisted) ===== */
 (function makeResizable(){
@@ -1237,22 +1299,19 @@ editor.addEventListener('keydown', (e) => {
   const hasSel = start !== end;
   const nextChar = editor.value[end] || '';
 
-  // If a closer is typed and the next char matches it, move over it (don't insert a new one).
   if (CLOSERS.has(e.key) && !hasSel && nextChar === e.key) {
     e.preventDefault();
     editor.selectionStart = editor.selectionEnd = end + 1;
     return;
   }
 
-  // If an opener is typed: wrap selection or insert pair with caret inside.
   if (e.key in OPEN_TO_CLOSE) {
     e.preventDefault();
 
     const open  = e.key;
     const close = OPEN_TO_CLOSE[open];
 
-    // If already at its closer and no selection (e.g. pressing '$' before '$'), skip over.
-    if (!hasSel && nextChar === close) {
+    if (!hasSel && nextChar === close && CLOSERS.has(e.key)) {
       editor.selectionStart = editor.selectionEnd = end + 1;
       return;
     }
@@ -1274,7 +1333,6 @@ editor.addEventListener('keydown', (e) => {
     try { localStorage.setItem(LS_CONTENT, editor.value); } catch (_) {}
     return;
   }
-  // otherwise: let key behave normally
 });
 </script>
 
