@@ -141,6 +141,8 @@
       scrollbar-width: none;         /* hide in Firefox */
     }
     #overlay::-webkit-scrollbar{ display:none; }  /* hide in Chromium/WebKit */
+    #overlay .overlay-line{ width:100%; }
+    #overlay .wrap-row{ width:100%; }
     #editor{
       position:relative; width:100%; height:100%; padding:.6em 1em .6em 1em; font-family:monospace; font-size:15px; line-height:1.5;
       border:none; outline:none; background:transparent; color:var(--text); resize:none; overflow:auto;
@@ -393,13 +395,7 @@
 
 
   <!-- ===================== App Script ===================== -->
-  <script>
-    /* =====================
-       Config
-       ===================== */
-    const EXPORT_SCALE = 8;             // logical text scale baked into CSS metrics for export
-
-
+  <script type="module">
     /* =====================
        Element refs
        ===================== */
@@ -408,6 +404,7 @@
     const overlay  = document.getElementById('overlay');
     const preview  = document.getElementById('preview');
     const divider  = document.getElementById('divider');
+    const leftPane = document.getElementById('leftPane');
 
 
     const modeToggle = document.getElementById('modeToggle');
@@ -471,12 +468,68 @@
       const out = {}; for (const [k,v] of Object.entries(obj || {})){ out[k] = Array.isArray(v) ? String(v[0]) : String(v); } return out;
     }
     function maxArgCount(s){ let m=0, r=/#([1-9])/g, a; while ((a=r.exec(s))!==null) m=Math.max(m,parseInt(a[1],10)); return m; }
-    function parseNewcommands(text){
-      const out = {}; const head=/(\\(?:re)?newcommand)\s*\{\s*(\\[A-Za-z@]+)\s*\}\s*(?:\[\s*(\d+)\s*\])?\s*\{/g; /* arity parsed later via body */
-      let m, any=false; while ((m=head.exec(text))!==null){ const name=m[2]; let i=head.lastIndex, depth=1; while(i<text.length && depth>0){ const ch=text[i++]; if(ch==='\\'){ i++; continue; } if(ch==='{') depth++; else if(ch==='}') depth--; } const body=text.slice(head.lastIndex, i-1).trim(); out[name]=body; any=true; head.lastIndex=i; }
-      return any?out:null;
-    }
     function stripLatexComments(s){ return s.replace(/(^|[^\\])%.*$/gm, '$1'); }
+    function indexToLineNumber(source, index){ let line=1; for (let i=0; i<index; i++){ if (source.charCodeAt(i) === 10) line++; } return line; }
+    function extractMacros(source){
+      const macros = {};
+      const matchedPositions = new Set();
+      const errors = [];
+      const head = /(\\(?:re)?newcommand)\s*\{\s*(\\[A-Za-z@]+)\s*\}\s*(?:\[\s*(\d+)\s*\])?\s*\{/g;
+      let lastBodyEnd = 0;
+      let match;
+      while ((match = head.exec(source)) !== null){
+        const name = match[2];
+        const bodyStart = head.lastIndex;
+        let depth = 1;
+        let i = bodyStart;
+        while (i < source.length && depth > 0){
+          const ch = source[i++];
+          if (ch === '\\'){ i++; continue; }
+          if (ch === '{') depth++;
+          else if (ch === '}') depth--;
+        }
+        if (depth !== 0){
+          errors.push({ index: match.index, reason: 'Unmatched braces' });
+          matchedPositions.add(match.index);
+          lastBodyEnd = bodyStart;
+          break;
+        }
+        const body = source.slice(bodyStart, i - 1).trim();
+        macros[name] = body;
+        matchedPositions.add(match.index);
+        head.lastIndex = i;
+        lastBodyEnd = i;
+      }
+
+      const commandRegex = /\\(?:re)?newcommand/g;
+      let cmd;
+      while ((cmd = commandRegex.exec(source)) !== null){
+        if (!matchedPositions.has(cmd.index)){
+          errors.push({ index: cmd.index, reason: 'Could not parse command' });
+        }
+      }
+
+      if (lastBodyEnd > 0){
+        const trailing = source.slice(lastBodyEnd);
+        const nonWsIndex = trailing.search(/\S/);
+        if (nonWsIndex !== -1){
+          const absoluteIndex = lastBodyEnd + nonWsIndex;
+          const ch = trailing[nonWsIndex];
+          const reason = (ch === '}') ? 'Unmatched closing brace' : 'Unexpected trailing characters';
+          errors.push({ index: absoluteIndex, reason });
+        }
+      }
+
+      return { macros: Object.keys(macros).length ? macros : null, errors };
+    }
+    function parseMacrosInput(raw){
+      const sanitized = stripLatexComments(raw);
+      const { macros, errors } = extractMacros(sanitized);
+      const annotated = errors
+        .filter((err, idx, arr) => arr.findIndex(e => e.index === err.index && e.reason === err.reason) === idx)
+        .map(err => ({ ...err, line: indexToLineNumber(sanitized, err.index) }));
+      return { macros, errors: annotated };
+    }
 
 
     /* =====================
@@ -497,77 +550,140 @@
 
 
     /* =====================
-       Measuring helpers
+       Guides (gutter + overlay)
        ===================== */
-    function getPx(val){ return parseFloat(val) || 0; }
-    function syncOverlayAndMirror(){ const cs=getComputedStyle(editor); overlay.style.paddingTop=cs.paddingTop; overlay.style.paddingBottom=cs.paddingBottom; overlay.style.paddingLeft='0'; overlay.style.paddingRight='0'; measure.style.fontFamily=cs.fontFamily; measure.style.fontSize=cs.fontSize; measure.style.lineHeight=cs.lineHeight; measure.style.letterSpacing=cs.letterSpacing; const innerW=editor.clientWidth - parseFloat(cs.paddingLeft||0) - parseFloat(cs.paddingRight||0); measure.style.width=innerW+'px'; }
-    function visualLineHeightPx(){ measure.textContent='M'; let h=measure.getBoundingClientRect().height; measure.textContent=''; if(!h||h<1) h=parseFloat(getComputedStyle(editor).lineHeight)||20; return h; }
+    const Guides = (() => {
+      const lineHeightCache = new Map();
+      const entries = [];
+      let rebuildRAF = null;
+      let lastMeasureWidth = 0;
 
+      function invalidateCache(){
+        lineHeightCache.clear();
+        entries.forEach(entry => { entry.cacheKey = null; });
+      }
 
-    /* =====================
-       Gutter/overlay rebuild (throttled)
-       ===================== */
-    let rebuildRAF = null;
-    function scheduleGuideRebuild(){
-      if (rebuildRAF) return;                 // coalesce multiple calls this frame
-      rebuildRAF = requestAnimationFrame(() => {
-        rebuildRAF = null;
-        rebuildGuidesWrapping();
-      });
-    }
-    function rebuildGuidesWrapping(){
-      // 🔒 Remember current scroll so we don't "jump" to numbers 1..N
-      const keep = editor.scrollTop;
-
-
-      syncOverlayAndMirror();
-
-
-      // Rebuild
-      gutter.innerHTML  = '';
-      overlay.innerHTML = '';
-
-
-      const lh = visualLineHeightPx();
-      const lines = editor.value.split('\n');
-      const stripeBG = getComputedStyle(document.body).getPropertyValue('--stripe-light');
-
-
-      for (let i = 0; i < lines.length; i++){
-        measure.textContent = lines[i] || ' ';
-        const h = Math.max(lh, measure.getBoundingClientRect().height || lh);
-
-
-        // One gutter line per logical line, height = wrapped height
-        const gn = document.createElement('div');
-        gn.className   = 'ln';
-        gn.textContent = i + 1;                 // ✅ always sequential from 1..N
-        gn.style.height     = h + 'px';
-        gn.style.lineHeight = h + 'px';
-        gutter.appendChild(gn);
-
-
-        // Paint wrap stripes (purely visual)
-        const rows = Math.max(1, Math.ceil(h / lh));
-        const bg = (i % 2) ? stripeBG : 'transparent';
-        for (let r = 0; r < rows; r++){
-          const stripe = document.createElement('div');
-          stripe.className = 'row';
-          const last = (r === rows - 1);
-          const stripeH = last ? (h - (rows - 1) * lh) : lh;
-          stripe.style.height = stripeH + 'px';
-          stripe.style.backgroundColor = bg;
-          overlay.appendChild(stripe);
+      function syncOverlayAndMirror(){
+        const cs = getComputedStyle(editor);
+        overlay.style.paddingTop = cs.paddingTop;
+        overlay.style.paddingBottom = cs.paddingBottom;
+        overlay.style.paddingLeft = '0';
+        overlay.style.paddingRight = '0';
+        measure.style.fontFamily = cs.fontFamily;
+        measure.style.fontSize = cs.fontSize;
+        measure.style.lineHeight = cs.lineHeight;
+        measure.style.letterSpacing = cs.letterSpacing;
+        const innerW = editor.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
+        if (Number.isFinite(innerW) && innerW > 0){
+          if (innerW !== lastMeasureWidth){
+            lastMeasureWidth = innerW;
+            invalidateCache();
+          }
+          measure.style.width = innerW + 'px';
         }
       }
-      measure.textContent = '';
 
+      function visualLineHeightPx(){
+        measure.textContent = 'M';
+        let h = measure.getBoundingClientRect().height;
+        measure.textContent = '';
+        if (!h || h < 1) h = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+        return h;
+      }
 
-      // 🔁 Restore scroll positions so the top visible number matches the scrolled line
-      gutter.scrollTop  = keep;
-      overlay.scrollTop = keep;
-      // (We do NOT change editor.scrollTop here; we respect whatever it already is.)
-    }
+      function ensureEntry(index){
+        let entry = entries[index];
+        if (entry) return entry;
+        const gutterLine = document.createElement('div');
+        gutterLine.className = 'ln';
+        gutter.appendChild(gutterLine);
+        const overlayLine = document.createElement('div');
+        overlayLine.className = 'overlay-line';
+        overlay.appendChild(overlayLine);
+        entry = { gutterLine, overlayLine, rows: 0, height: 0, cacheKey: null, stripe: 'transparent' };
+        entries[index] = entry;
+        return entry;
+      }
+
+      function rebuildOverlayEntry(entry, rows, height, baseLineHeight, stripeColor){
+        const fragment = document.createDocumentFragment();
+        const base = baseLineHeight;
+        const lastRowHeight = Math.max(1, height - base * (rows - 1));
+        for (let r = 0; r < rows; r++){
+          const row = document.createElement('div');
+          row.className = 'wrap-row';
+          const stripeHeight = (r === rows - 1) ? lastRowHeight : base;
+          row.style.height = `${stripeHeight}px`;
+          row.style.backgroundColor = stripeColor;
+          fragment.appendChild(row);
+        }
+        entry.overlayLine.replaceChildren(fragment);
+      }
+
+      function rebuildGuides({ force = false } = {}){
+        const keep = editor.scrollTop;
+        syncOverlayAndMirror();
+        const lines = editor.value.split('\n');
+        const baseLineHeight = visualLineHeightPx();
+        const stripeBG = getComputedStyle(document.body).getPropertyValue('--stripe-light') || 'transparent';
+        const innerWidth = lastMeasureWidth || editor.clientWidth;
+
+        for (let i = 0; i < lines.length; i++){
+          const text = lines[i];
+          const cacheKey = `${text}|${innerWidth}|${baseLineHeight}`;
+          let metrics = lineHeightCache.get(cacheKey);
+          if (!metrics || force){
+            measure.textContent = text || ' ';
+            const measured = measure.getBoundingClientRect().height || baseLineHeight;
+            const height = Math.max(baseLineHeight, measured);
+            const rows = Math.max(1, Math.ceil(height / baseLineHeight));
+            metrics = { height, rows };
+            lineHeightCache.set(cacheKey, metrics);
+          }
+
+          const entry = ensureEntry(i);
+          const stripeColor = (i % 2) ? stripeBG : 'transparent';
+          entry.gutterLine.textContent = i + 1;
+          const needsUpdate = force || entry.cacheKey !== cacheKey || entry.height !== metrics.height || entry.rows !== metrics.rows || entry.stripe !== stripeColor;
+          if (needsUpdate){
+            entry.gutterLine.style.height = `${metrics.height}px`;
+            entry.gutterLine.style.lineHeight = `${metrics.height}px`;
+            entry.overlayLine.style.height = `${metrics.height}px`;
+            rebuildOverlayEntry(entry, metrics.rows, metrics.height, baseLineHeight, stripeColor);
+            entry.cacheKey = cacheKey;
+            entry.height = metrics.height;
+            entry.rows = metrics.rows;
+            entry.stripe = stripeColor;
+          }
+        }
+
+        while (entries.length > lines.length){
+          const entry = entries.pop();
+          if (entry){
+            gutter.removeChild(entry.gutterLine);
+            overlay.removeChild(entry.overlayLine);
+          }
+        }
+
+        measure.textContent = '';
+        gutter.scrollTop = keep;
+        overlay.scrollTop = keep;
+      }
+
+      function scheduleRebuild(options = {}){
+        if (options.force){
+          rebuildGuides({ force: true });
+          return;
+        }
+        if (rebuildRAF) return;
+        rebuildRAF = requestAnimationFrame(() => {
+          rebuildRAF = null;
+          rebuildGuides();
+        });
+      }
+
+      return { syncOverlayAndMirror, scheduleRebuild, forceRebuild: () => rebuildGuides({ force: true }), invalidateCache };
+    })();
     /* =====================
        Render pipeline
        ===================== */
@@ -591,7 +707,7 @@
           preview.appendChild(wrap);
         }
       }
-      scheduleGuideRebuild();
+      Guides.scheduleRebuild();
     }
 
 
@@ -653,135 +769,251 @@
 
 
     /* =====================
-       File download helpers
+       Exporter
        ===================== */
-    function triggerDownload(url, filename){ const a=document.createElement('a'); a.href=url; a.download=filename; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove(); }
-    function saveCanvasPNG(canvas, filename){ return new Promise((resolve) => { if (canvas.toBlob) { canvas.toBlob((blob) => { if (!blob) { resolve(false); return; } const blobUrl = URL.createObjectURL(blob); triggerDownload(blobUrl, filename); setTimeout(() => URL.revokeObjectURL(blobUrl), 1500); resolve(true); }, 'image/png'); } else { const dataUrl = canvas.toDataURL('image/png'); triggerDownload(dataUrl, filename); resolve(true); } }); }
+    const Exporter = (() => {
+      const EXPORT_SCALE = 8;
+      const PADDING = { top: 20, bottom: 20, sides: 20 };
+      const raf = () => new Promise(r => requestAnimationFrame(r));
 
+      class FontLoadError extends Error {
+        constructor(message){ super(message); this.name = 'FontLoadError'; }
+      }
 
-    /* =====================
-       Export helpers (fonts + layout)
-       ===================== */
-    function ff(family, file, weight=400, style='normal'){
-      return `@font-face{font-family:${family};src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/${file}.woff2) format("woff2");font-weight:${weight};font-style:${style};font-display:swap;}`;
-    }
-    function buildFontFaceStyleEl(){
-      const css = [
-        ff('KaTeX_Main','KaTeX_Main-Regular',400,'normal'),
-        ff('KaTeX_Main','KaTeX_Main-Italic', 400,'italic'),
-        ff('KaTeX_Main','KaTeX_Main-Bold',   700,'normal'),
-        ff('KaTeX_Main','KaTeX_Main-BoldItalic',700,'italic'),
-        ff('KaTeX_Math','KaTeX_Math-Italic', 400,'italic'),
-        ff('KaTeX_Math','KaTeX_Math-BoldItalic',700,'italic'),
-        ff('KaTeX_AMS','KaTeX_AMS-Regular'),
-        ff('KaTeX_Caligraphic','KaTeX_Caligraphic-Regular'),
-        ff('KaTeX_Caligraphic','KaTeX_Caligraphic-Bold',700),
-        ff('KaTeX_Fraktur','KaTeX_Fraktur-Regular'),
-        ff('KaTeX_SansSerif','KaTeX_SansSerif-Regular'),
-        ff('KaTeX_SansSerif','KaTeX_SansSerif-Bold',700),
-        ff('KaTeX_SansSerif','KaTeX_SansSerif-Italic',400,'italic'),
-        ff('KaTeX_Script','KaTeX_Script-Regular'),
-        ff('KaTeX_Typewriter','KaTeX_Typewriter-Regular'),
-        ff('KaTeX_Size1','KaTeX_Size1-Regular'),
-        ff('KaTeX_Size2','KaTeX_Size2-Regular'),
-        ff('KaTeX_Size3','KaTeX_Size3-Regular'),
-        ff('KaTeX_Size4','KaTeX_Size4-Regular'),
-        '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2) format("woff2"); font-weight:500; font-style:normal; font-display:swap;}',
-        '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-italic.woff2) format("woff2"); font-weight:500; font-style:italic; font-display:swap;}',
-        '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2) format("woff2"); font-weight:700; font-style:normal; font-display:swap;}',
-        '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-italic.woff2) format("woff2"); font-weight:700; font-style:italic; font-display:swap;}',
-      ].join('\n');
-      const el = document.createElement('style'); el.type='text/css'; el.appendChild(document.createTextNode(css)); return el;
-    }
+      function triggerDownload(url, filename){
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
 
+      function ff(family, file, weight=400, style='normal'){
+        return `@font-face{font-family:${family};src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/${file}.woff2) format("woff2");font-weight:${weight};font-style:${style};font-display:swap;}`;
+      }
 
-    function isMeaningfulLine(el){ if(!el) return false; if(el.querySelector && el.querySelector('.katex')) return true; if((el.textContent||'').trim().length>0) return true; return false; }
-    function trimLeadingTrailingBlanks(containerEl){ const kids = Array.from(containerEl.children); let i=0, j=kids.length-1; while(i<=j && !isMeaningfulLine(kids[i])) i++; while(j>=i && !isMeaningfulLine(kids[j])) j--; for(let k=0;k<i;k++) containerEl.removeChild(kids[k]); for(let k=kids.length-1;k>j;k--) containerEl.removeChild(kids[k]); }
+      function buildFontFaceStyleEl(){
+        const css = [
+          ff('KaTeX_Main','KaTeX_Main-Regular',400,'normal'),
+          ff('KaTeX_Main','KaTeX_Main-Italic', 400,'italic'),
+          ff('KaTeX_Main','KaTeX_Main-Bold',   700,'normal'),
+          ff('KaTeX_Main','KaTeX_Main-BoldItalic',700,'italic'),
+          ff('KaTeX_Math','KaTeX_Math-Italic', 400,'italic'),
+          ff('KaTeX_Math','KaTeX_Math-BoldItalic',700,'italic'),
+          ff('KaTeX_AMS','KaTeX_AMS-Regular'),
+          ff('KaTeX_Caligraphic','KaTeX_Caligraphic-Regular'),
+          ff('KaTeX_Caligraphic','KaTeX_Caligraphic-Bold',700),
+          ff('KaTeX_Fraktur','KaTeX_Fraktur-Regular'),
+          ff('KaTeX_SansSerif','KaTeX_SansSerif-Regular'),
+          ff('KaTeX_SansSerif','KaTeX_SansSerif-Bold',700),
+          ff('KaTeX_SansSerif','KaTeX_SansSerif-Italic',400,'italic'),
+          ff('KaTeX_Script','KaTeX_Script-Regular'),
+          ff('KaTeX_Typewriter','KaTeX_Typewriter-Regular'),
+          ff('KaTeX_Size1','KaTeX_Size1-Regular'),
+          ff('KaTeX_Size2','KaTeX_Size2-Regular'),
+          ff('KaTeX_Size3','KaTeX_Size3-Regular'),
+          ff('KaTeX_Size4','KaTeX_Size4-Regular'),
+          '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2) format("woff2"); font-weight:500; font-style:normal; font-display:swap;}',
+          '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-italic.woff2) format("woff2"); font-weight:500; font-style:italic; font-display:swap;}',
+          '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2) format("woff2"); font-weight:700; font-style:normal; font-display:swap;}',
+          '@font-face{font-family:"CMU Serif"; src:url(https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-italic.woff2) format("woff2"); font-weight:700; font-style:italic; font-display:swap;}',
+        ].join('\n');
+        const el = document.createElement('style');
+        el.type = 'text/css';
+        el.appendChild(document.createTextNode(css));
+        return el;
+      }
 
+      function createSandbox(bg){
+        const sandbox = document.createElement('div');
+        Object.assign(sandbox.style, { position:'fixed', left:'0', top:'0', opacity:'0', pointerEvents:'none', display:'inline-block', background:bg });
+        sandbox.appendChild(buildFontFaceStyleEl());
+        const webkitFillFix = document.createElement('style');
+        webkitFillFix.textContent = `.export-scope, .export-scope * { -webkit-text-fill-color: currentColor !important; }`;
+        sandbox.appendChild(webkitFillFix);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'export-scope';
+        wrapper.style.display = 'inline-block';
+        wrapper.style.whiteSpace = 'pre-wrap';
+        wrapper.style.tabSize = '4';
+        sandbox.appendChild(wrapper);
+        return { sandbox, wrapper };
+      }
 
-    async function preloadFonts(){
-      const probe = document.createElement('div'); Object.assign(probe.style,{ position:'fixed', left:'-9999px', top:'0', opacity:'0', pointerEvents:'none' });
-      const families = [ '"CMU Serif"', 'KaTeX_Main','KaTeX_Math','KaTeX_AMS','KaTeX_SansSerif','KaTeX_Script','KaTeX_Fraktur','KaTeX_Typewriter','KaTeX_Caligraphic' ];
-      probe.innerHTML = families.map(f => `<span style="font-family:${f};font-weight:400">A1</span>`).join(''); document.body.appendChild(probe);
-      try { if (document.fonts && document.fonts.ready) { await Promise.race([document.fonts.ready, new Promise(r=>setTimeout(r, 800))]); } else { await new Promise(r=>setTimeout(r, 300)); } } catch {}
-      probe.remove();
-    }
-
-
-    function dataUrlToBlob(dataUrl){ const [meta,b64]=dataUrl.split(','); const mime=(meta.match(/data:([^;]+)/)||[, 'image/png'])[1]; const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); return new Blob([u8],{type:mime}); }
-
-
-    const raf = () => new Promise(r => requestAnimationFrame(r));
-    async function settleLayout(){ await raf(); await raf(); if (document.fonts && document.fonts.ready) { try { await Promise.race([document.fonts.ready, new Promise(r=>setTimeout(r, 500))]); } catch {} } }
-
-
-    /* =====================
-       PNG export (scoped fixes + 1:1 pixel ratio)
-       ===================== */
-    async function exportPNG(){
-      const bg = getComputedStyle(preview).backgroundColor || getComputedStyle(document.body).backgroundColor;
-      const sandbox = document.createElement('div'); Object.assign(sandbox.style,{ position:'fixed', left:'0', top:'0', opacity:'0', pointerEvents:'none', display:'inline-block', background:bg });
-      sandbox.appendChild(buildFontFaceStyleEl());
-      // Scope the Safari text-fill fix only to our export DOM
-      const webkitFillFix = document.createElement('style'); webkitFillFix.textContent = `.export-scope, .export-scope * { -webkit-text-fill-color: currentColor !important; }`; sandbox.appendChild(webkitFillFix);
-      const wrapper = document.createElement('div'); wrapper.className = 'export-scope'; wrapper.style.display='inline-block'; wrapper.style.whiteSpace='pre-wrap'; wrapper.style.tabSize='4';
-      // Bake DPI into typography (preserves kerning) and avoid extra pixelRatio scaling
-      {
+      function applyPreviewStyles(wrapper, scale){
         const cps = getComputedStyle(preview);
         const baseSizePx = parseFloat(cps.fontSize) || 16;
-        const baseLHpx   = cps.lineHeight.endsWith('px') ? parseFloat(cps.lineHeight) : baseSizePx * 1.5;
-        const SCALE = Math.max(1, EXPORT_SCALE|0);
-        wrapper.style.fontFamily = cps.fontFamily;
+        const baseLHpx = cps.lineHeight.endsWith('px') ? parseFloat(cps.lineHeight) : baseSizePx * 1.5;
         const textColor = cps.color || '#111';
-        wrapper.style.color = textColor; wrapper.style.webkitTextFillColor = textColor; wrapper.style.backgroundColor = cps.backgroundColor;
-        wrapper.style.whiteSpace='pre-wrap'; wrapper.style.tabSize='4'; wrapper.style.fontKerning='normal'; wrapper.style.fontFeatureSettings='"kern" 1'; wrapper.style.textRendering='optimizeLegibility';
-        wrapper.style.fontSize = (baseSizePx * SCALE) + 'px';
-        wrapper.style.lineHeight = (baseLHpx * SCALE) + 'px';
+
+        wrapper.style.fontFamily = cps.fontFamily;
+        wrapper.style.color = textColor;
+        wrapper.style.webkitTextFillColor = textColor;
+        wrapper.style.backgroundColor = cps.backgroundColor;
+        wrapper.style.fontKerning = 'normal';
+        wrapper.style.fontFeatureSettings = '"kern" 1';
+        wrapper.style.textRendering = 'optimizeLegibility';
+        wrapper.style.whiteSpace = 'pre-wrap';
+        wrapper.style.tabSize = '4';
+        wrapper.style.fontSize = (baseSizePx * scale) + 'px';
+        wrapper.style.lineHeight = (baseLHpx * scale) + 'px';
+        wrapper.style.padding = `${PADDING.top}px ${PADDING.sides}px ${PADDING.bottom}px ${PADDING.sides}px`;
       }
-      const padTop=20, padBottom=20, padSides=20; wrapper.style.padding = `${padTop}px ${padSides}px ${padBottom}px ${padSides}px`;
-      const clone = preview.cloneNode(true); while (clone.firstChild) wrapper.appendChild(clone.firstChild);
-      wrapper.querySelectorAll('.katex-display').forEach(el => { el.style.marginTop='0'; el.style.marginBottom='0'; });
-      // wrapper.querySelectorAll('img, svg, canvas').forEach(el => { el.style.display='inline-block'; el.style.verticalAlign='baseline'; });
-      wrapper.querySelectorAll('img, canvas').forEach(el => {
-        el.style.display = 'inline-block';
-        el.style.verticalAlign = 'baseline';
-      });
-      trimLeadingTrailingBlanks(wrapper);
-      const meaningful = Array.from(wrapper.children).some(el => (el.querySelector && el.querySelector('.katex')) || ((el.textContent||'').trim().length>0));
-      if (!meaningful) { alert('Nothing to export yet — add some text or math first.'); return; }
-      sandbox.appendChild(wrapper); document.body.appendChild(sandbox);
-      try {
-        await preloadFonts(); await settleLayout();
-        const rect = wrapper.getBoundingClientRect(); const w=Math.ceil(rect.width), h=Math.ceil(rect.height); if (w<=0||h<=0) throw new Error('zero-size after layout');
-        if (window.htmlToImage?.toPng) {
-          const url = await window.htmlToImage.toPng(wrapper, { pixelRatio: 1, backgroundColor: bg, cacheBust: true, width: w, height: h, fetchRequestInit: { mode: 'cors', credentials: 'omit' }, style: { transform: 'none' } });
-          const blobUrl = URL.createObjectURL(dataUrlToBlob(url)); triggerDownload(blobUrl, stampName('png')); setTimeout(() => URL.revokeObjectURL(blobUrl), 1500); return;
-        }
-        const canvas = await html2canvas(wrapper, { backgroundColor: bg, scale: 1, width: w, height: h, useCORS: true, foreignObjectRendering: false });
-        await saveCanvasPNG(canvas, stampName('png'));
-      } catch (err) {
-        console.warn('Export failed, attempting html2canvas fallback:', err);
+
+      function isMeaningfulNode(el){
+        if (!el) return false;
+        if (el.querySelector && el.querySelector('.katex')) return true;
+        return (el.textContent || '').trim().length > 0;
+      }
+
+      function trimLeadingTrailingBlanks(container){
+        const children = Array.from(container.children);
+        let start = 0;
+        let end = children.length - 1;
+        while (start <= end && !isMeaningfulNode(children[start])) start++;
+        while (end >= start && !isMeaningfulNode(children[end])) end--;
+        for (let i = 0; i < start; i++) container.removeChild(children[i]);
+        for (let i = children.length - 1; i > end; i--) container.removeChild(children[i]);
+      }
+
+      function populateWrapper(wrapper){
+        const clone = preview.cloneNode(true);
+        while (clone.firstChild) wrapper.appendChild(clone.firstChild);
+        wrapper.querySelectorAll('.katex-display').forEach(el => {
+          el.style.marginTop = '0';
+          el.style.marginBottom = '0';
+        });
+        wrapper.querySelectorAll('img, canvas').forEach(el => {
+          el.style.display = 'inline-block';
+          el.style.verticalAlign = 'baseline';
+        });
+        trimLeadingTrailingBlanks(wrapper);
+      }
+
+      async function ensureFontsReady(timeout = 1200){
+        const probe = document.createElement('div');
+        Object.assign(probe.style, { position:'fixed', left:'-9999px', top:'0', opacity:'0', pointerEvents:'none' });
+        const families = [ '"CMU Serif"', 'KaTeX_Main','KaTeX_Math','KaTeX_AMS','KaTeX_SansSerif','KaTeX_Script','KaTeX_Fraktur','KaTeX_Typewriter','KaTeX_Caligraphic' ];
+        probe.innerHTML = families.map(f => `<span style="font-family:${f};font-weight:400">A1</span>`).join('');
+        document.body.appendChild(probe);
+        let timeoutId;
         try {
-          const canvas = await html2canvas(sandbox, { backgroundColor: bg, scale: 1, useCORS: true, foreignObjectRendering: false });
-          await saveCanvasPNG(canvas, stampName('png'));
-        } catch (err2) {
-          console.error('Fallback export failed:', err2);
-          alert('PNG export failed. (See console for details.)');
+          if (document.fonts && document.fonts.ready){
+            await Promise.race([
+              document.fonts.ready,
+              new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new FontLoadError('Timed out waiting for fonts')), timeout); })
+            ]);
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+          probe.remove();
         }
-      } finally { document.body.removeChild(sandbox); }
-    }
+      }
 
+      async function settleLayout(){
+        await raf();
+        await raf();
+        if (document.fonts && document.fonts.ready){
+          try { await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 500))]); } catch {}
+        }
+      }
 
-    /* =====================
-       Common utils
-       ===================== */
-    function stampName(ext){ const d=new Date(); const pad=n=>String(n).padStart(2,'0'); return `latex-lab-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.${ext}`; }
+      function dataUrlToBlob(dataUrl){
+        const [meta, b64] = dataUrl.split(',');
+        const mime = (meta.match(/data:([^;]+)/) || [, 'image/png'])[1];
+        const bin = atob(b64);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        return new Blob([u8], { type: mime });
+      }
+
+      async function canvasToBlobUrl(canvas){
+        return new Promise((resolve, reject) => {
+          if (canvas.toBlob){
+            canvas.toBlob(blob => {
+              if (!blob){ reject(new Error('Canvas export returned empty blob.')); return; }
+              resolve(URL.createObjectURL(blob));
+            }, 'image/png');
+          } else {
+            try {
+              const dataUrl = canvas.toDataURL('image/png');
+              resolve(URL.createObjectURL(dataUrlToBlob(dataUrl)));
+            } catch (err) {
+              reject(err);
+            }
+          }
+        });
+      }
+
+      function stampName(ext){
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        return `latex-lab-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.${ext}`;
+      }
+
+      async function renderToObjectUrl(wrapper, dims, bg, sandbox){
+        if (window.htmlToImage?.toPng){
+          try {
+            const dataUrl = await window.htmlToImage.toPng(wrapper, { pixelRatio: 1, backgroundColor: bg, cacheBust: true, width: dims.width, height: dims.height, fetchRequestInit: { mode: 'cors', credentials: 'omit' }, style: { transform: 'none' } });
+            return URL.createObjectURL(dataUrlToBlob(dataUrl));
+          } catch (err) {
+            console.warn('html-to-image export failed, falling back to canvas render:', err);
+          }
+        }
+
+        try {
+          const canvas = await html2canvas(wrapper, { backgroundColor: bg, scale: 1, width: dims.width, height: dims.height, useCORS: true, foreignObjectRendering: false });
+          return await canvasToBlobUrl(canvas);
+        } catch (err) {
+          console.warn('Direct canvas export failed, attempting sandbox render:', err);
+          const canvas = await html2canvas(sandbox, { backgroundColor: bg, scale: 1, useCORS: true, foreignObjectRendering: false });
+          return await canvasToBlobUrl(canvas);
+        }
+      }
+
+      async function exportPNG(){
+        const bg = getComputedStyle(preview).backgroundColor || getComputedStyle(document.body).backgroundColor;
+        const { sandbox, wrapper } = createSandbox(bg);
+        document.body.appendChild(sandbox);
+        try {
+          applyPreviewStyles(wrapper, Math.max(1, EXPORT_SCALE | 0));
+          populateWrapper(wrapper);
+          if (!Array.from(wrapper.children).some(isMeaningfulNode)){
+            alert('Nothing to export yet — add some text or math first.');
+            return;
+          }
+          await ensureFontsReady();
+          await settleLayout();
+          const rect = wrapper.getBoundingClientRect();
+          const dims = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+          if (dims.width <= 0 || dims.height <= 0) throw new Error('Preview is empty after layout.');
+          const blobUrl = await renderToObjectUrl(wrapper, dims, bg, sandbox);
+          triggerDownload(blobUrl, stampName('png'));
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+        } catch (err) {
+          if (err instanceof FontLoadError){
+            alert('PNG export is waiting for fonts to finish loading. Give it a moment and try again.');
+          } else {
+            console.error('PNG export failed:', err);
+            alert('PNG export failed. Check the console for details.');
+          }
+        } finally {
+          sandbox.remove();
+        }
+      }
+
+      return { exportPNG };
+    })();
 
 
     /* =====================
        Export button
        ===================== */
-    pngBtn.addEventListener('click', exportPNG);
+    pngBtn.addEventListener('click', () => Exporter.exportPNG());
 
 
     /* =====================
@@ -793,17 +1025,83 @@
     /* =====================
        Resizable split (persisted)
        ===================== */
-    (function makeResizable(){ let dragging=false, startX=0, startLeft=0; const left=document.getElementById('leftPane'); const container=document.querySelector('.container');
-      divider.addEventListener('mousedown', (e) => { dragging=true; startX=e.clientX; startLeft=left.getBoundingClientRect().width; document.body.style.cursor='col-resize'; e.preventDefault(); });
-      window.addEventListener('mousemove', (e) => { if(!dragging) return; let newLeft=startLeft+(e.clientX-startX); const min=240, max=container.clientWidth-240; newLeft=Math.max(min, Math.min(max, newLeft)); left.style.flex=`0 0 ${newLeft}px`; preview.style.flex='1 1 auto'; try { localStorage.setItem(LS_SPLITPX, String(newLeft)); } catch(e){} });
-      window.addEventListener('mouseup', () => { dragging=false; document.body.style.cursor=''; });
-      try { const savedPx=parseFloat(localStorage.getItem(LS_SPLITPX)); if(!Number.isNaN(savedPx)) { left.style.flex=`0 0 ${savedPx}px`; preview.style.flex=`1 1 auto`; } } catch(e){}
+    (function makeResizable(){
+      const container = document.querySelector('.container');
+      const minWidth = 240;
+      let pointerId = null;
+      let startX = 0;
+      let startLeft = 0;
+      let pendingWidth = null;
+
+      divider.style.touchAction = 'none';
+
+      function clampWidth(raw){
+        const max = container.clientWidth - minWidth;
+        return Math.max(minWidth, Math.min(max, raw));
+      }
+
+      function applyWidth(px){
+        leftPane.style.flex = `0 0 ${px}px`;
+        preview.style.flex = '1 1 auto';
+        Guides.syncOverlayAndMirror();
+        Guides.scheduleRebuild();
+      }
+
+      function persistWidth(px){
+        try { localStorage.setItem(LS_SPLITPX, String(px)); } catch(e){}
+      }
+
+      function releasePointer(e){
+        if (pointerId === null || (e && e.pointerId !== pointerId)) return;
+        try { divider.releasePointerCapture(pointerId); } catch {}
+        pointerId = null;
+        document.body.style.cursor = '';
+        if (pendingWidth !== null){
+          persistWidth(pendingWidth);
+          pendingWidth = null;
+        }
+      }
+
+      divider.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+        startLeft = leftPane.getBoundingClientRect().width;
+        pendingWidth = startLeft;
+        divider.setPointerCapture(pointerId);
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+      });
+
+      divider.addEventListener('pointermove', (e) => {
+        if (pointerId === null || e.pointerId !== pointerId) return;
+        const proposed = clampWidth(startLeft + (e.clientX - startX));
+        if (!Number.isFinite(proposed)) return;
+        pendingWidth = proposed;
+        applyWidth(proposed);
+      });
+
+      divider.addEventListener('pointerup', releasePointer);
+      divider.addEventListener('pointercancel', releasePointer);
+
+      divider.addEventListener('dblclick', () => {
+        const cw = container.clientWidth;
+        const mid = Math.max(minWidth, Math.min(cw - minWidth, cw / 2));
+        applyWidth(mid);
+        persistWidth(mid);
+      });
+
+      function restoreSaved(){
+        try {
+          const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX));
+          if (!Number.isNaN(savedPx)){
+            applyWidth(clampWidth(savedPx));
+          }
+        } catch(e){}
+      }
+
+      restoreSaved();
     })();
-
-
-    divider.addEventListener('dblclick', () => { const cw=document.querySelector('.container').clientWidth; const left=document.getElementById('leftPane'); const mid=Math.max(240, Math.min(cw-240, cw/2)); left.style.flex=`0 0 ${mid}px`; preview.style.flex=`1 1 auto`; try { localStorage.setItem(LS_SPLITPX, String(mid)); } catch(e){} });
-
-
     /* =====================
        Snippets (matrix / table / cases)
        ===================== */
@@ -1228,11 +1526,33 @@
     function b64decode(b64){ const bin=atob(b64); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
 
 
-    function encodeStateToHash(){ const leftPx=document.getElementById('leftPane').getBoundingClientRect().width; const state={ t: editor.value, m: (mode==='classic')?1:0, d: darkToggle.checked?1:0, s: leftPx, x: MACROS }; const compressed = compressState(state); const payload = compressed || b64encode(JSON.stringify(state)); location.hash='state='+payload; return location.href; }
-    function tryLoadStateFromHash(){ const m=location.hash.match(/state=([^&]+)/); if(!m) return false; const token=m[1]; let st = decompressState(token); if (!st){ try { st = JSON.parse(b64decode(token)); } catch(e){ return false; } } if (typeof st.t === 'string') editor.value = st.t; modeToggle.checked = (st.m===1); mode = modeToggle.checked ? 'classic' : 'mixed'; document.body.classList.toggle('dark', st.d===1); darkToggle.checked = (st.d===1); if (typeof st.s === 'number' && !Number.isNaN(st.s)){ const left=document.getElementById('leftPane'); left.style.flex=`0 0 ${st.s}px`; preview.style.flex=`1 1 auto`; try { localStorage.setItem(LS_SPLITPX, String(st.s)); } catch(e){} } if (st.x && typeof st.x === 'object') { MACROS = normalizeMacros(st.x); try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){} } modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed'; modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.'; editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math'; return true; }
+    function encodeStateToUrl(){
+      const leftWidth = leftPane.getBoundingClientRect().width;
+      const state = { t: editor.value, m: (mode === 'classic') ? 1 : 0, d: darkToggle.checked ? 1 : 0, s: leftWidth, x: MACROS };
+      const compressed = compressState(state);
+      const payload = compressed || b64encode(JSON.stringify(state));
+      const shareUrl = new URL(location.href);
+      shareUrl.hash = 'state=' + payload;
+      if (history.replaceState){
+        history.replaceState(null, '', shareUrl.toString());
+      } else {
+        location.hash = 'state=' + payload;
+      }
+      return shareUrl.toString();
+    }
+    function tryLoadStateFromHash(){ const m=location.hash.match(/state=([^&]+)/); if(!m) return false; const token=m[1]; let st = decompressState(token); if (!st){ try { st = JSON.parse(b64decode(token)); } catch(e){ return false; } } if (typeof st.t === 'string') editor.value = st.t; modeToggle.checked = (st.m===1); mode = modeToggle.checked ? 'classic' : 'mixed'; document.body.classList.toggle('dark', st.d===1); darkToggle.checked = (st.d===1); if (typeof st.s === 'number' && !Number.isNaN(st.s)){ leftPane.style.flex=`0 0 ${st.s}px`; preview.style.flex=`1 1 auto`; try { localStorage.setItem(LS_SPLITPX, String(st.s)); } catch(e){} } if (st.x && typeof st.x === 'object') { MACROS = normalizeMacros(st.x); try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){} } modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed'; modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.'; editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math'; return true; }
 
 
-    shareBtn.addEventListener('click', async () => { const url = encodeStateToHash(); try { await navigator.clipboard.writeText(url); shareBtn.textContent = '✅ Copied!'; setTimeout(()=> shareBtn.textContent = '🔗 Share link', 1200); } catch(e){ prompt('Copy this link:', url); } });
+    shareBtn.addEventListener('click', async () => {
+      const url = encodeStateToUrl();
+      try {
+        await navigator.clipboard.writeText(url);
+        shareBtn.textContent = '✅ Copied!';
+        setTimeout(() => shareBtn.textContent = '🔗 Share link', 1200);
+      } catch(e){
+        prompt('Copy this link:', url);
+      }
+    });
 
 
     /* Close Insert menu on outside click */
@@ -1356,7 +1676,7 @@
       if (!loadedFromHash){
         try { const saved = localStorage.getItem(LS_CONTENT); if (saved != null) editor.value = saved; } catch(e){}
         try { const dark = localStorage.getItem(LS_DARK)==='1'; darkToggle.checked=dark; document.body.classList.toggle('dark', dark);} catch(e){}
-        try { const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX)); if (!Number.isNaN(savedPx)) { const left=document.getElementById('leftPane'); left.style.flex=`0 0 ${savedPx}px`; preview.style.flex=`1 1 auto`; } } catch(e){}
+        try { const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX)); if (!Number.isNaN(savedPx)) { leftPane.style.flex=`0 0 ${savedPx}px`; preview.style.flex=`1 1 auto`; } } catch(e){}
         try { const savedMode = localStorage.getItem(LS_MODE); if (savedMode === 'classic' || savedMode === 'mixed') modeToggle.checked = (savedMode === 'classic'); } catch(e){}
         try { const raw = localStorage.getItem(LS_MACROS); if (raw) { const obj = JSON.parse(raw); MACROS = normalizeMacros(obj); } } catch(e){}
         // Restore cursor and scroll
@@ -1384,12 +1704,12 @@
       modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
       modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
       editor.placeholder    = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
-      syncOverlayAndMirror();
+      Guides.syncOverlayAndMirror();
       render();
       // Ensure the very first rebuild happens before we restore scroll
       requestAnimationFrame(() => {
         // Optional: force a rebuild once after initial layout (handles font/width settles)
-        scheduleGuideRebuild();
+        Guides.scheduleRebuild();
 
 
         // Then, one more frame later, apply the saved scroll
@@ -1406,15 +1726,26 @@
       });
       editor.focus();
     });
-    window.addEventListener('resize', () => { syncOverlayAndMirror(); scheduleGuideRebuild(); });
+    window.addEventListener('resize', () => { Guides.syncOverlayAndMirror(); Guides.scheduleRebuild({ force: true }); });
 
 
     /* =====================
        Modal close behaviors
        ===================== */
-    matrixModal.addEventListener('click', (e) => { if (e.target === matrixModal) matrixModal.classList.remove('show'); });
-    tableModal.addEventListener('click',  (e) => { if (e.target === tableModal)  tableModal.classList.remove('show');  });
-    macrosModal.addEventListener('click', (e) => { if (e.target === macrosModal) macrosModal.classList.remove('show'); });
+    function attachModalDismiss(backdrop, close){
+      let pointerDownOnBackdrop = false;
+      backdrop.addEventListener('pointerdown', (e) => {
+        pointerDownOnBackdrop = (e.target === backdrop);
+      });
+      backdrop.addEventListener('click', (e) => {
+        if (pointerDownOnBackdrop && e.target === backdrop) close();
+        pointerDownOnBackdrop = false;
+      });
+    }
+
+    attachModalDismiss(matrixModal, () => matrixModal.classList.remove('show'));
+    attachModalDismiss(tableModal,  () => tableModal.classList.remove('show'));
+    attachModalDismiss(macrosModal, () => macrosModal.classList.remove('show'));
 
 
     window.addEventListener('keydown', (e) => {
@@ -1431,10 +1762,31 @@
     macrosBtn.addEventListener('click', () => { macrosText.value = serializeMacros(MACROS); macrosModal.classList.add('show'); });
     macrosCancel.addEventListener('click', ()=> macrosModal.classList.remove('show'));
     macrosReset.addEventListener('click', () => { MACROS = {...DEFAULT_MACROS}; try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){} macrosText.value = serializeMacros(MACROS); render(); });
+
+    function focusMacroLine(line){
+      if (!line || line < 1) return;
+      const lines = macrosText.value.split('\n');
+      let start = 0;
+      for (let i = 0; i < line - 1 && i < lines.length; i++) start += lines[i].length + 1;
+      const target = lines[line - 1] || '';
+      const end = start + target.length;
+      macrosText.focus();
+      macrosText.setSelectionRange(start, end);
+      const ratio = (line - 1) / Math.max(1, lines.length - 1);
+      macrosText.scrollTop = ratio * (macrosText.scrollHeight - macrosText.clientHeight);
+    }
+
     macrosSave.addEventListener('click', (e) => {
       e.preventDefault();
       try {
-        const raw = macrosText.value; const parsed = parseNewcommands(stripLatexComments(raw));
+        const raw = macrosText.value;
+        const { macros: parsed, errors } = parseMacrosInput(raw);
+        if (errors.length){
+          const first = errors[0];
+          focusMacroLine(first.line);
+          alert(`Could not parse \\newcommand on line ${first.line}: ${first.reason}.`);
+          return;
+        }
         if (!parsed || Object.keys(parsed).length === 0) { alert('Nothing to save. Add lines like \\newcommand{\\SO}{\\operatorname{SO}}'); return; }
         MACROS = { ...MACROS, ...parsed };
         try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
