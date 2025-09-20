@@ -692,7 +692,7 @@
 
       // Coordinates relative to the textarea's visible viewport
       const left = marker.offsetLeft + bl - textarea.scrollLeft - 1;   // keep padding in X so caret aligns with text
-      const top  = marker.offsetTop  + bt - textarea.scrollTop - 2;
+      const top  = marker.offsetTop  + bt - textarea.scrollTop - 1;
 
       // Derive a sane line height (don’t use marker.offsetHeight!)
       const lh = parseFloat(style.lineHeight);
