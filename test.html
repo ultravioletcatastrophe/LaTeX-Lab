@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trystero Transport Latency Lab</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f6fa;
+      --card-bg: #ffffff;
+      --text: #16213e;
+      --muted: #6b7280;
+      --border: rgba(15, 23, 42, 0.12);
+      --accent: #2563eb;
+      --accent-dark: #1e40af;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --card-bg: #111c33;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --border: rgba(148, 163, 184, 0.22);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    header {
+      padding: 1.75rem 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--card-bg);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    }
+    header h1 {
+      margin: 0 0 0.6rem 0;
+      font-size: clamp(1.8rem, 4vw, 2.3rem);
+    }
+    header p {
+      margin: 0.4rem 0;
+      max-width: 72ch;
+      color: var(--muted);
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.8rem 1.1rem 2.4rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem 1.35rem;
+      box-shadow: 0 14px 32px rgba(15, 23, 42, 0.10);
+    }
+    .card h2 {
+      margin: 0 0 0.75rem 0;
+      font-size: 1.25rem;
+    }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .field { display: flex; flex-direction: column; gap: 0.4rem; }
+    label { font-weight: 600; font-size: 0.92rem; }
+    input, select {
+      font-size: 0.96rem;
+      padding: 0.55rem 0.7rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: inherit;
+    }
+    button {
+      font-size: 0.96rem;
+      padding: 0.58rem 1.2rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: inherit;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    button.secondary {
+      background: rgba(148, 163, 184, 0.18);
+      color: inherit;
+    }
+    button.accent {
+      background: linear-gradient(135deg, #2563eb, #38bdf8);
+      border-color: #1e3a8a;
+      color: #fff;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent-dark);
+      color: #fff;
+    }
+    button:hover:not([disabled]) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25); }
+    button.accent:hover:not([disabled]) { box-shadow: 0 8px 20px rgba(56, 189, 248, 0.28); }
+    button.secondary { border-color: rgba(148, 163, 184, 0.35); }
+    button.secondary:hover:not([disabled]) { box-shadow: 0 6px 14px rgba(148, 163, 184, 0.28); }
+    button[disabled] { opacity: 0.55; cursor: not-allowed; box-shadow: none; transform: none; }
+    .actions { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: Menlo, Consolas, "Roboto Mono", monospace;
+      font-size: 0.88rem;
+    }
+    th, td {
+      padding: 0.55rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    th {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.78rem;
+      background: rgba(37, 99, 235, 0.12);
+      color: var(--accent);
+    }
+    .pill-warn { background: rgba(234, 179, 8, 0.18); color: #b45309; }
+    .pill-error { background: rgba(220, 38, 38, 0.18); color: #b91c1c; }
+    .pill-ok { background: rgba(34,197,94,0.18); color: #047857; }
+    .hint { margin-top: 0.65rem; color: var(--muted); font-size: 0.88rem; }
+    .log {
+      background: #0f172a;
+      color: #d9e3f5;
+      min-height: 200px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 0.8rem;
+      border-radius: 12px;
+      font-family: Menlo, Consolas, "Roboto Mono", monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+    .log div { margin-bottom: 0.45rem; word-break: break-word; }
+    @media (max-width: 640px) {
+      header { padding: 1.4rem 1rem; }
+      .actions { width: 100%; }
+      button { width: 100%; justify-content: center; }
+      table { font-size: 0.82rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Trystero Transport Latency Lab</h1>
+    <p>Open this page in two windows. Pick a shared room code. Set one window to <strong>Echo</strong> (responds) and the other to <strong>Tester</strong> (measures). When you run the test, the tester sends the same plain text payload through every Trystero transport (MQTT, Nostr, IPFS, Torrent) and records round-trip latency plus effective throughput.</p>
+    <p>Supabase and Firebase are excluded so everything works from static hosting without project credentials.</p>
+  </header>
+  <main>
+    <section class="card" aria-label="Connection controls">
+      <h2>Connection</h2>
+      <div class="grid">
+        <div class="field">
+          <label for="roomInput">Room code</label>
+          <input id="roomInput" type="text" placeholder="e.g. trystero-lab" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="roleSelect">Role</label>
+          <select id="roleSelect">
+            <option value="tester">Tester (initiates measurements)</option>
+            <option value="echo">Echo (reflects payload back)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sizeSelect">Payload size</label>
+          <select id="sizeSelect">
+            <option value="1024">1 KB</option>
+            <option value="4096">4 KB</option>
+            <option value="16384">16 KB</option>
+            <option value="65536">64 KB</option>
+            <option value="131072">128 KB</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="iterationInput">Iterations</label>
+          <input id="iterationInput" type="number" min="1" max="50" value="5">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="connectBtn" class="primary">Connect all transports</button>
+        <button id="disconnectBtn" class="secondary" disabled>Disconnect</button>
+        <button id="runBtn" class="accent" disabled>Run combined latency test</button>
+      </div>
+      <p class="hint" id="statusText">Status: disconnected</p>
+      <p class="hint" id="roleHint">Tester mode requires an Echo peer online in each transport to produce numbers.</p>
+    </section>
+
+    <section class="card" aria-label="Transport status">
+      <h2>Transport health</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Transport</th>
+            <th>Status</th>
+            <th>Peers</th>
+            <th>Avg latency (ms)</th>
+            <th>Avg throughput (KB/s)</th>
+          </tr>
+        </thead>
+        <tbody id="strategyBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card" aria-label="Log output">
+      <h2>Log</h2>
+      <div id="logOutput" class="log" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script type="module">
+    const STRATEGIES = [
+      { key: 'mqtt', label: 'MQTT', loader: () => import('./trystero-mqtt.min.js') },
+      { key: 'nostr', label: 'Nostr', loader: () => import('./trystero-nostr.min.js') },
+      { key: 'ipfs', label: 'IPFS', loader: () => import('./trystero-ipfs.min.js') },
+      { key: 'torrent', label: 'Torrent', loader: () => import('./trystero-torrent.min.js') }
+    ];
+
+    const APP_ID_BASE = 'webrtc-strategy-lab-v1';
+    const ACK_TIMEOUT = 10000;
+    const encoder = new TextEncoder();
+
+    const roomInput = document.getElementById('roomInput');
+    const roleSelect = document.getElementById('roleSelect');
+    const sizeSelect = document.getElementById('sizeSelect');
+    const iterationInput = document.getElementById('iterationInput');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const runBtn = document.getElementById('runBtn');
+    const statusText = document.getElementById('statusText');
+    const roleHint = document.getElementById('roleHint');
+    const logOutput = document.getElementById('logOutput');
+    const strategyBody = document.getElementById('strategyBody');
+
+    const state = {
+      role: roleSelect.value,
+      room: '',
+      connected: false,
+      connecting: false,
+      testing: false
+    };
+
+    STRATEGIES.forEach(def => {
+      const row = document.createElement('tr');
+      row.dataset.key = def.key;
+      row.innerHTML = `
+        <td>${def.label}</td>
+        <td class="status-cell"><span class="status-pill pill-error">Disconnected</span></td>
+        <td class="peer-cell">0</td>
+        <td class="latency-cell">–</td>
+        <td class="throughput-cell">–</td>
+      `;
+      strategyBody.appendChild(row);
+      def.row = {
+        status: row.querySelector('.status-cell'),
+        peers: row.querySelector('.peer-cell'),
+        latency: row.querySelector('.latency-cell'),
+        throughput: row.querySelector('.throughput-cell')
+      };
+      def.instance = null;
+    });
+
+    connectBtn.addEventListener('click', connectAll);
+    disconnectBtn.addEventListener('click', disconnectAll);
+    runBtn.addEventListener('click', runTests);
+    roleSelect.addEventListener('change', () => {
+      state.role = roleSelect.value;
+      updateRoleHint();
+      updateControls();
+    });
+
+    updateRoleHint();
+    updateControls();
+
+    async function connectAll(){
+      if (state.connecting) return;
+      const rawRoom = roomInput.value.trim();
+      if (!rawRoom){
+        log('Provide a room code to continue.');
+        return;
+      }
+      const room = rawRoom.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!room){
+        log('Room codes accept letters, numbers, dash, underscore.');
+        return;
+      }
+      await disconnectAll();
+      state.room = room;
+      state.connecting = true;
+      document.title = `Trystero ${state.role === 'tester' ? 'Tester' : 'Echo'} — ${room}`;
+      updateStatus(`Connecting to ${room} as ${state.role}…`);
+      updateControls();
+      for (const strategy of STRATEGIES){
+        updateStrategyStatus(strategy, 'Connecting…', 'warn');
+        updateStrategyPeers(strategy, 0);
+        resetStrategyMetrics(strategy);
+      }
+      try {
+        await Promise.all(STRATEGIES.map(strategy => establishStrategy(strategy)));
+        state.connected = true;
+        updateStatus(`Connected to ${room} as ${state.role}.`);
+        log('All transports initialised. Waiting for peers.');
+      } catch (err){
+        log(`Connection failure: ${err && err.message ? err.message : err}`);
+        await disconnectAll();
+        updateStatus('Connection failed');
+      } finally {
+        state.connecting = false;
+        updateControls();
+      }
+    }
+
+    async function establishStrategy(strategy){
+      const mod = await strategy.loader();
+      const joinRoom = mod.joinRoom || mod.default;
+      if (typeof joinRoom !== 'function'){
+        throw new Error(`joinRoom missing for ${strategy.label}`);
+      }
+      const config = { appId: `${APP_ID_BASE}-${strategy.key}` };
+      const room = joinRoom(config, state.room);
+      const [sendTest, onTest] = room.makeAction('latency-test');
+      const [sendAck, onAck] = room.makeAction('latency-ack');
+      const peers = new Set();
+      const inflight = new Map();
+      const results = [];
+      const unsubscribes = [];
+
+      const instance = {
+        room,
+        sendTest,
+        onTest,
+        sendAck,
+        onAck,
+        peers,
+        inflight,
+        results,
+        unsubscribes,
+        ready: state.role === 'echo'
+      };
+      strategy.instance = instance;
+
+      const offJoin = room.onPeerJoin(peerId => {
+        peers.add(peerId);
+        updateStrategyPeers(strategy, peers.size);
+        if (state.role === 'tester'){
+          instance.ready = peers.size > 0;
+          updateStrategyStatus(strategy, peers.size ? 'Peer online' : 'Waiting for peer', peers.size ? 'ok' : 'warn');
+        }
+      });
+      const offLeave = room.onPeerLeave(peerId => {
+        peers.delete(peerId);
+        updateStrategyPeers(strategy, peers.size);
+        if (state.role === 'tester'){
+          instance.ready = peers.size > 0;
+          updateStrategyStatus(strategy, peers.size ? 'Peer online' : 'Waiting for peer', peers.size ? 'ok' : 'warn');
+        }
+      });
+      if (typeof offJoin === 'function') unsubscribes.push(offJoin);
+      if (typeof offLeave === 'function') unsubscribes.push(offLeave);
+
+      if (state.role === 'echo'){
+        const stop = onTest((packet, peerId) => {
+          if (!packet || !packet.id) return;
+          const bytes = packet.payloadBytes || (packet.payload ? encoder.encode(packet.payload).length : 0);
+          try {
+            sendAck({ id: packet.id, payloadBytes: bytes }, peerId);
+          } catch (err){
+            log(`[${strategy.label}] Ack send failed: ${err}`);
+          }
+        });
+        if (typeof stop === 'function') unsubscribes.push(stop);
+        updateStrategyStatus(strategy, 'Ready (echo)', 'ok');
+      } else {
+        const stop = onAck(packet => handleAck(strategy, packet));
+        if (typeof stop === 'function') unsubscribes.push(stop);
+        updateStrategyStatus(strategy, 'Waiting for peer', 'warn');
+      }
+
+      log(`[${strategy.label}] transport connected.`);
+      if (state.role === 'tester') {
+        updateStrategyStatus(strategy, strategy.instance.ready ? 'Peer online' : 'Waiting for peer', strategy.instance.ready ? 'ok' : 'warn');
+      }
+    }
+
+    async function disconnectAll(){
+      for (const strategy of STRATEGIES){
+        const instance = strategy.instance;
+        if (!instance) continue;
+        instance.inflight.forEach(record => {
+          clearTimeout(record.timeout);
+          record.reject?.(new Error('Disconnected'));
+        });
+        instance.inflight.clear();
+        if (Array.isArray(instance.unsubscribes)){
+          instance.unsubscribes.forEach(fn => { try { fn?.(); } catch (_) {} });
+          instance.unsubscribes.length = 0;
+        }
+        try { instance.room.leave?.(); } catch (_) {}
+        strategy.instance = null;
+        updateStrategyStatus(strategy, 'Disconnected', 'error');
+        updateStrategyPeers(strategy, 0);
+        resetStrategyMetrics(strategy);
+      }
+      state.connected = false;
+      state.testing = false;
+      document.title = 'Trystero Transport Latency Lab';
+      updateStatus('Disconnected');
+      updateControls();
+    }
+
+    function handleAck(strategy, packet){
+      if (!packet || !packet.id) return;
+      const instance = strategy.instance;
+      if (!instance) return;
+      const record = instance.inflight.get(packet.id);
+      if (!record) return;
+      instance.inflight.delete(packet.id);
+      clearTimeout(record.timeout);
+      const elapsed = Math.max(0.0001, performance.now() - record.start);
+      const throughputBps = record.bytes / (elapsed / 1000);
+      instance.results.push({ latency: elapsed, throughputBps });
+      renderStrategyMetrics(strategy);
+      record.resolve({ latency: elapsed, throughputBps });
+      log(`[${strategy.label}] Iteration ${record.iteration}: ${elapsed.toFixed(2)} ms, ${(throughputBps / 1024).toFixed(2)} KB/s`);
+      updateSummary();
+    }
+
+    async function runTests(){
+      if (state.role !== 'tester'){
+        log('Switch to Tester role to initiate measurements.');
+        return;
+      }
+      if (!state.connected){
+        log('Connect first.');
+        return;
+      }
+      if (state.testing){
+        log('A test run is already in progress.');
+        return;
+      }
+      const activeStrategies = STRATEGIES.filter(s => s.instance);
+      if (!activeStrategies.length){
+        log('No transports active.');
+        state.testing = false;
+        updateControls();
+        return;
+      }
+      const missingPeer = activeStrategies.filter(s => !s.instance.ready);
+      if (missingPeer.length){
+        log(`Skipping: no peer on ${missingPeer.map(s => s.label).join(', ')} (still measuring connected transports).`);
+        missingPeer.forEach(s => updateStrategyStatus(s, 'Waiting for peer', 'warn'));
+      }
+      const iterations = Number.parseInt(iterationInput.value, 10) || 1;
+      const payloadBytes = Number.parseInt(sizeSelect.value, 10) || 1024;
+      activeStrategies.forEach(strategy => {
+        strategy.instance.results.length = 0;
+        resetStrategyMetrics(strategy);
+        renderStrategyMetrics(strategy);
+      });
+      const runnable = activeStrategies.filter(s => s.instance.ready);
+      if (!runnable.length){
+        log('No transports currently ready—waiting for peers.');
+        state.testing = false;
+        updateControls();
+        updateSummary();
+        return;
+      }
+      state.testing = true;
+      updateControls();
+
+      for (let i = 1; i <= iterations; i++){
+        const payload = generatePayload(payloadBytes);
+        const promises = runnable.map(strategy =>
+          sendAndAwait(strategy, i, payload, payloadBytes)
+            .catch(err => {
+              log(`[${strategy.label}] Iteration ${i} failed: ${err && err.message ? err.message : err}`);
+              updateStrategyStatus(strategy, 'Error', 'error');
+              return null;
+            })
+        );
+        await Promise.all(promises);
+        await waitMs(180);
+      }
+
+      state.testing = false;
+      updateControls();
+      updateSummary();
+      log('Test run complete.');
+    }
+
+    function sendAndAwait(strategy, iteration, payload, payloadBytes){
+      return new Promise((resolve, reject) => {
+        const instance = strategy.instance;
+        if (!instance || !instance.ready){
+          reject(new Error('Peer not ready'));
+          return;
+        }
+        const id = `${strategy.key}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const bytes = payloadBytes;
+        const record = {
+          id,
+          iteration,
+          bytes,
+          start: performance.now(),
+          resolve,
+          reject,
+          timeout: null
+        };
+        record.timeout = setTimeout(() => {
+          instance.inflight.delete(id);
+          reject(new Error('Ack timeout'));
+        }, ACK_TIMEOUT);
+        instance.inflight.set(id, record);
+        try {
+          instance.sendTest({ id, payload, payloadBytes: bytes });
+        } catch (err){
+          clearTimeout(record.timeout);
+          instance.inflight.delete(id);
+          reject(err);
+        }
+      });
+    }
+
+    function updateStrategyStatus(strategy, text, tone = 'ok'){
+      const pillClass = tone === 'error' ? 'pill-error' : tone === 'warn' ? 'pill-warn' : 'pill-ok';
+      strategy.row.status.innerHTML = `<span class="status-pill ${pillClass}">${text}</span>`;
+    }
+
+    function updateStrategyPeers(strategy, count){
+      strategy.row.peers.textContent = count.toString();
+    }
+
+    function resetStrategyMetrics(strategy){
+      strategy.row.latency.textContent = '–';
+      strategy.row.throughput.textContent = '–';
+    }
+
+    function trimmedMean(values){
+      if (!values.length) return null;
+      if (values.length >= 3){
+        const sorted = [...values].sort((a, b) => a - b);
+        const trimmed = sorted.slice(1, sorted.length - 1);
+        const target = trimmed.length ? trimmed : sorted;
+        return target.reduce((sum, val) => sum + val, 0) / target.length;
+      }
+      return values.reduce((sum, val) => sum + val, 0) / values.length;
+    }
+
+    function computeTrimmedStats(results){
+      if (!results || !results.length) return null;
+      const latencies = results.map(r => r.latency);
+      const throughputs = results.map(r => r.throughputBps);
+      return {
+        avgLatency: trimmedMean(latencies),
+        avgThroughput: trimmedMean(throughputs),
+        count: results.length
+      };
+    }
+
+    function renderStrategyMetrics(strategy){
+      const instance = strategy.instance;
+      if (!instance || !instance.results.length){
+        resetStrategyMetrics(strategy);
+        return;
+      }
+      const stats = computeTrimmedStats(instance.results);
+      if (!stats){
+        resetStrategyMetrics(strategy);
+        return;
+      }
+      strategy.row.latency.textContent = stats.avgLatency.toFixed(2);
+      strategy.row.throughput.textContent = (stats.avgThroughput / 1024).toFixed(2);
+    }
+
+    function updateSummary(){
+      const parts = STRATEGIES.filter(s => s.instance && s.instance.results.length).map(s => {
+        const stats = computeTrimmedStats(s.instance.results);
+        if (!stats) return null;
+        return `${s.label}: ${stats.avgLatency.toFixed(2)} ms avg, ${(stats.avgThroughput / 1024).toFixed(2)} KB/s avg (${stats.count} samples)`;
+      }).filter(Boolean);
+    }
+
+    function updateStatus(text){
+      statusText.textContent = `Status: ${text}`;
+    }
+
+    function updateRoleHint(){
+      if (state.role === 'tester'){
+        roleHint.textContent = 'Tester mode requires an Echo peer online in each transport to produce numbers.';
+      } else {
+        roleHint.textContent = 'Echo mode simply reflects any payload back; leave this tab open while the tester runs measurements.';
+      }
+    }
+
+    function updateControls(){
+      connectBtn.disabled = state.connecting || state.connected;
+      disconnectBtn.disabled = !state.connected && !state.connecting;
+      runBtn.disabled = state.role !== 'tester' || !state.connected || state.testing;
+    }
+
+    function generatePayload(bytes){
+      const chunk = 'Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium. ';
+      let output = '';
+      while (output.length < bytes){ output += chunk; }
+      return output.slice(0, bytes);
+    }
+
+    function waitMs(ms){
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function log(message){
+      const line = document.createElement('div');
+      const stamp = new Date().toLocaleTimeString();
+      line.textContent = `[${stamp}] ${message}`;
+      logOutput.prepend(line);
+      while (logOutput.childNodes.length > 160){
+        logOutput.removeChild(logOutput.lastChild);
+      }
+    }
+
+    window.addEventListener('beforeunload', disconnectAll);
+  </script>
+</body>
+</html>
