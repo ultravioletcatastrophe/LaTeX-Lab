@@ -1812,6 +1812,15 @@
       e.preventDefault();
       try {
         const raw = macrosText.value;
+        // allow empty input
+        if (raw === "") {
+          MACROS = {};
+          try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
+          macrosText.value = ""; // clear textarea
+          render();
+          requestAnimationFrame(() => macrosModal.classList.remove('show'));
+          return; // don’t try to parse
+        }
         const { macros: parsed, errors } = parseMacrosInput(raw);
         if (errors.length){
           const first = errors[0];
@@ -1819,8 +1828,8 @@
           alert(`Could not parse \\newcommand on line ${first.line}: ${first.reason}.`);
           return;
         }
-        if (!parsed || Object.keys(parsed).length === 0) { alert('Nothing to save. Add lines like \\newcommand{\\SO}{\\operatorname{SO}}'); return; }
-        MACROS = { ...MACROS, ...parsed };
+        // if (!parsed || Object.keys(parsed).length === 0) { alert('Nothing to save. Add lines like \\newcommand{\\SO}{\\operatorname{SO}}'); return; }
+        MACROS = parsed;
         try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
         try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
         render(); requestAnimationFrame(() => macrosModal.classList.remove('show'));
