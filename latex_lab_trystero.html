@@ -627,7 +627,7 @@
       target.el.style.transform = '';
       target.el.style.top = `${Math.round(y)}px`;
       target.el.style.left = `${Math.round(x)}px`;
-      const barHeight = Math.max(height, 12);
+      const barHeight = Math.max(height*.9, 1);
       target.el.style.height = `${barHeight}px`;
       target.el.style.width = '2px';
       target.bar.style.position = 'absolute';
@@ -672,6 +672,7 @@
 
       // Use the *inner* content width (clientWidth minus padding) to match wrapping
       const pl = parseFloat(style.paddingLeft)  || 0;
+      const pt = parseFloat(style.paddingTop)    || 0;
       const pr = parseFloat(style.paddingRight) || 0;
       const bt = parseFloat(style.borderTopWidth)  || 0;
       const bl = parseFloat(style.borderLeftWidth) || 0;
@@ -690,13 +691,13 @@
       mirror.appendChild(marker);
 
       // Coordinates relative to the textarea's visible viewport
-      const left = marker.offsetLeft + bl - textarea.scrollLeft + 0;   // keep padding in X so caret aligns with text
-      const top  = marker.offsetTop  + bt - textarea.scrollTop;
+      const left = marker.offsetLeft + bl - textarea.scrollLeft - 1;   // keep padding in X so caret aligns with text
+      const top  = marker.offsetTop  + bt - textarea.scrollTop - 2;
 
       // Derive a sane line height (don’t use marker.offsetHeight!)
       const lh = parseFloat(style.lineHeight);
       const fs = parseFloat(style.fontSize) || 16;
-      const lineHeight = Number.isFinite(lh) ? lh : Math.round(fs * 1.5);
+      const lineHeight = Number.isFinite(lh) ? lh : Math.round(fs * 1.2);
 
       mirror.textContent = '';
 
