@@ -1029,23 +1029,34 @@
       let lastBroadcastCursor = getCurrentCursor();
       let lastBroadcastName = '';
 
-      function resetBroadcastCache(){
+      // Add these tracking variables
+      let roomCreatedAt = null;
+      let hasReceivedInitialSync = false;
+      let syncRequestCount = 0;
+      const MAX_SYNC_REQUESTS = 3;
+
+      function resetBroadcastCache() {
         lastBroadcastText = editor.value || '';
         lastBroadcastMode = mode;
         lastBroadcastCursor = getCurrentCursor();
         lastBroadcastName = displayName.trim();
       }
-      function notifyHostAssigned(id){
+
+      function notifyHostAssigned(id) {
         hostId = id || null;
         isRoomOwner = hostId === CLIENT_ID;
         currentOwner = hostId;
-        if (isRoomOwner){
+        
+        console.log('[Collab] Host assigned:', hostId, 'isOwner:', isRoomOwner);
+        
+        if (isRoomOwner) {
           pendingInitialSync = false;
           joinWarningDismissed = true;
           if (joinPop) joinPop.style.display = 'none';
           resetBroadcastCache();
         }
       }
+
       const capability = {
         secureContext: typeof isSecureContext !== 'undefined'
           ? (isSecureContext || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
@@ -1054,7 +1065,7 @@
         hasCrypto: !!(globalThis.crypto && globalThis.crypto.subtle)
       };
 
-      function preflightChecks(){
+      function preflightChecks() {
         const missing = [];
         if (!capability.secureContext) missing.push('secure origin');
         if (!capability.hasWebRTC) missing.push('WebRTC');
@@ -1066,30 +1077,44 @@
         return false;
       }
 
-      function setStatus(text){ if (collabStatus) collabStatus.textContent = text; }
-      function setButton(state){
-        if (!roomJoinBtn) return;
-        if (state === 'connected'){ roomJoinBtn.textContent = 'Disconnect'; roomJoinBtn.disabled = false; }
-        else if (state === 'connecting'){ roomJoinBtn.textContent = 'Connecting…'; roomJoinBtn.disabled = true; }
-        else { roomJoinBtn.textContent = 'Connect'; roomJoinBtn.disabled = false; }
+      function setStatus(text) {
+        if (collabStatus) collabStatus.textContent = text;
       }
-      function updateStatus(){
-        if (!room){ setStatus('Offline'); return; }
+
+      function setButton(state) {
+        if (!roomJoinBtn) return;
+        if (state === 'connected') {
+          roomJoinBtn.textContent = 'Disconnect';
+          roomJoinBtn.disabled = false;
+        } else if (state === 'connecting') {
+          roomJoinBtn.textContent = 'Connecting…';
+          roomJoinBtn.disabled = true;
+        } else {
+          roomJoinBtn.textContent = 'Connect';
+          roomJoinBtn.disabled = false;
+        }
+      }
+
+      function updateStatus() {
+        if (!room) {
+          setStatus('Offline');
+          return;
+        }
         const count = peers.size;
         const peerLabel = count ? `${count} peer${count === 1 ? '' : 's'}` : 'solo';
-        setStatus(`Room ${roomName} · ${peerLabel}`);
+        const hostLabel = isRoomOwner ? ' (host)' : '';
+        setStatus(`Room ${roomName} · ${peerLabel}${hostLabel}`);
       }
-      async function ensureTrystero(){
+
+      async function ensureTrystero() {
         if (joinRoomImpl) return joinRoomImpl;
-        if (!loadPromise){
-          const sources = [
-            './trystero-mqtt.min.js'
-          ];
+        if (!loadPromise) {
+          const sources = ['./trystero-mqtt.min.js'];
           loadPromise = (async () => {
-            for (const url of sources){
+            for (const url of sources) {
               try {
                 const mod = await import(url);
-                if (typeof window !== 'undefined'){
+                if (typeof window !== 'undefined') {
                   window.__TrysteroModule = mod;
                 }
                 const candidate = mod?.joinRoom || mod?.default;
@@ -1107,11 +1132,24 @@
         joinRoomImpl = fn;
         return joinRoomImpl;
       }
-      function cleanup(){
-        if (unsubscribeState){ try { unsubscribeState(); } catch(e){} unsubscribeState = null; }
-        if (offJoin){ try { offJoin(); } catch(e){} offJoin = null; }
-        if (offLeave){ try { offLeave(); } catch(e){} offLeave = null; }
-        if (room){ try { room.leave(); } catch(e){} room = null; }
+
+      function cleanup() {
+        if (unsubscribeState) {
+          try { unsubscribeState(); } catch(e) {}
+          unsubscribeState = null;
+        }
+        if (offJoin) {
+          try { offJoin(); } catch(e) {}
+          offJoin = null;
+        }
+        if (offLeave) {
+          try { offLeave(); } catch(e) {}
+          offLeave = null;
+        }
+        if (room) {
+          try { room.leave(); } catch(e) {}
+          room = null;
+        }
         sendState = null;
         roomName = '';
         peers.clear();
@@ -1125,6 +1163,9 @@
         currentOwner = null;
         hostId = null;
         joinWarningDismissed = false;
+        roomCreatedAt = null;
+        hasReceivedInitialSync = false;
+        syncRequestCount = 0;
         Array.from(remotePeers.keys()).forEach(removeRemotePeer);
         peerMeta.clear();
         resetBroadcastCache();
@@ -1132,21 +1173,23 @@
         setButton('disconnected');
         updateStatus();
       }
-      function replaceTextPreserveCaret(newText){
+
+      function replaceTextPreserveCaret(newText) {
         if (editor.value === newText) return false;
         const wasFocused = (document.activeElement === editor);
         const prevStart = editor.selectionStart;
         const prevEnd = editor.selectionEnd;
         editor.value = newText;
-        if (wasFocused){
+        if (wasFocused) {
           const len = newText.length;
           editor.selectionStart = Math.min(prevStart, len);
           editor.selectionEnd = Math.min(prevEnd, len);
         }
-        try { localStorage.setItem(LS_CONTENT, newText); } catch(e){}
+        try { localStorage.setItem(LS_CONTENT, newText); } catch(e) {}
         return true;
       }
-      function computeDelta(prev, next){
+
+      function computeDelta(prev, next) {
         if (prev === next) return null;
         const prevLen = prev.length;
         const nextLen = next.length;
@@ -1154,7 +1197,7 @@
         while (start < prevLen && start < nextLen && prev.charCodeAt(start) === next.charCodeAt(start)) start++;
         let endPrev = prevLen;
         let endNext = nextLen;
-        while (endPrev > start && endNext > start && prev.charCodeAt(endPrev - 1) === next.charCodeAt(endNext - 1)){
+        while (endPrev > start && endNext > start && prev.charCodeAt(endPrev - 1) === next.charCodeAt(endNext - 1)) {
           endPrev--;
           endNext--;
         }
@@ -1166,59 +1209,147 @@
           resultLength: nextLen
         };
       }
-      function applyDelta(base, delta){
+
+      function applyDelta(base, delta) {
         const { index, remove, insert } = delta || {};
-        if (typeof index !== 'number' || typeof remove !== 'number' || index < 0 || remove < 0 || index > base.length){
+        if (typeof index !== 'number' || typeof remove !== 'number' || index < 0 || remove < 0 || index > base.length) {
           throw new Error('Invalid delta');
         }
         const prefix = base.slice(0, index);
         const toRemove = base.slice(index, index + remove);
-        if (toRemove.length !== remove){
+        if (toRemove.length !== remove) {
           throw new Error('Delta remove range out of bounds');
         }
         const suffix = base.slice(index + remove);
         return prefix + (insert || '') + suffix;
       }
-      function requestSync(){
-        if (!sendState) return;
-        try { sendState({ kind:'request', clock: ++localClock, ts: Date.now() }); }
-        catch(e){}
+
+      function requestSync() {
+        if (!sendState || syncRequestCount >= MAX_SYNC_REQUESTS) return;
+        syncRequestCount++;
+        console.log('[Collab] Requesting sync, attempt', syncRequestCount);
+        try {
+          sendState({ 
+            kind: 'request', 
+            clock: ++localClock, 
+            ts: Date.now(),
+            from: CLIENT_ID
+          });
+        } catch(e) {
+          console.error('[Collab] Failed to send sync request', e);
+        }
       }
-      function handleState(payload = {}, peerId){
+
+      function handleState(payload = {}, peerId) {
         if (!payload) return;
         const source = peerId || payload.sender || 'remote';
         const senderId = payload.from || source;
+        
+        // Ignore our own messages
         if (senderId === CLIENT_ID) return;
-        if (payload.kind === 'request'){
-          if (isRoomOwner) sendFullState();
+        
+        console.log('[Collab] Received', payload.kind, 'from', source.slice(0,6));
+        
+        // Handle sync request
+        if (payload.kind === 'request') {
+          // Only respond if we're the established host
+          if (isRoomOwner && !pendingInitialSync) {
+            console.log('[Collab] Host responding to sync request');
+            sendFullState();
+          }
           sendCursorState(true);
           return;
         }
+        
+        // Handle host announcement
+        if (payload.kind === 'host_announce') {
+          const announceTime = payload.created || payload.priority || 0;
+          const myTime = roomCreatedAt || 0;
+          
+          // Accept host if: we don't have one, or they joined earlier, or same time but their ID is lower
+          if (!hostId || 
+              announceTime < myTime || 
+              (announceTime === myTime && payload.host < CLIENT_ID)) {
+            console.log('[Collab] Accepting host announcement from', payload.host.slice(0,6));
+            notifyHostAssigned(payload.host);
+            hasReceivedInitialSync = false;
+            pendingInitialSync = true;
+          }
+          return;
+        }
+        
+        // Clock tracking
         const prev = remoteClocks.get(source) || 0;
-        if (typeof payload.clock === 'number'){
+        if (typeof payload.clock === 'number') {
           if (payload.clock <= prev) return;
           remoteClocks.set(source, payload.clock);
           if (payload.clock > lastRemoteClock) lastRemoteClock = payload.clock;
         }
-        if (pendingInitialSync && (payload.kind === 'full' || typeof payload.text === 'string' || payload.delta)){
-          maybeShowJoinWarning();
-        }
-        if (payload.kind === 'full' || payload.kind === 'delta'){
-          const messageHost = payload.host || senderId;
-          if (!hostId || hostId === messageHost){
-            hostId = messageHost;
+        
+        // Handle full state from host
+        if (payload.kind === 'full' && payload.owner === 1) {
+          // Accept this as authoritative state
+          if (!hasReceivedInitialSync || payload.host === hostId) {
+            console.log('[Collab] Accepting full state from host', (payload.host || source).slice(0,6));
+            notifyHostAssigned(payload.host);
+            hasReceivedInitialSync = true;
+            pendingInitialSync = false;
+            syncRequestCount = 0;
+            
+            applying = true;
+            try {
+              applyRemoteState(payload, source);
+            } finally {
+              applying = false;
+            }
           }
+          return;
         }
-        if (payload.kind === 'cursor'){
+        
+        // Handle cursor updates
+        if (payload.kind === 'cursor') {
           if (typeof payload.name === 'string') updatePeerName(source, payload.name);
           if (payload.cursor) updateRemoteCursor(source, payload.cursor);
           return;
         }
-        applying = true;
-        try { applyRemoteState(payload, source); }
-        finally { applying = false; }
+        
+        // Only apply deltas after initial sync and from the host
+        if (payload.kind === 'delta') {
+          if (hasReceivedInitialSync) {
+            applying = true;
+            try {
+              applyRemoteState(payload, source);
+            } finally {
+              applying = false;
+            }
+          } else {
+            console.log('[Collab] Ignoring delta - no initial sync yet');
+          }
+          return;
+        }
+        
+        // Show join warning if needed
+        if (pendingInitialSync && !joinWarningDismissed) {
+          maybeShowJoinWarning();
+        }
       }
-      function attachPeerDebug(peerId){
+
+      function announceHost() {
+        if (!sendState || !isRoomOwner) return;
+        const payload = {
+          kind: 'host_announce',
+          host: CLIENT_ID,
+          created: roomCreatedAt,
+          priority: roomCreatedAt,
+          clock: ++localClock,
+          ts: Date.now(),
+          from: CLIENT_ID
+        };
+        console.log('[Collab] Announcing as host');
+        sendState(payload);
+      }
+
+      function attachPeerDebug(peerId) {
         if (!room || debuggedPeers.has(peerId)) return;
         const peersMap = room.getPeers?.();
         const entry = peersMap ? peersMap[peerId] : null;
@@ -1237,12 +1368,13 @@
         logIce();
         logGather();
       }
-      function applyRemoteState(data, peerId){
+
+      function applyRemoteState(data, peerId) {
         let needsRender = false;
         let textChanged = false;
         let stateChanged = false;
 
-        if (typeof data.owner === 'number' && data.owner === 1){
+        if (typeof data.owner === 'number' && data.owner === 1) {
           const hostCandidate = data.host || peerId || null;
           notifyHostAssigned(hostCandidate);
           pendingInitialSync = false;
@@ -1250,46 +1382,48 @@
           if (joinPop) joinPop.style.display = 'none';
         }
 
-        if (typeof data.text === 'string'){
-          if (replaceTextPreserveCaret(data.text)){
+        if (typeof data.text === 'string') {
+          if (replaceTextPreserveCaret(data.text)) {
             needsRender = true;
             textChanged = true;
           }
-        } else if (data.delta){
+        } else if (data.delta) {
           const base = editor.value;
-          if (typeof data.baseLength === 'number' && data.baseLength !== base.length){
+          if (typeof data.baseLength === 'number' && data.baseLength !== base.length) {
             console.warn('[Collab] Delta base length mismatch, requesting sync');
             requestSync();
             return;
           }
           try {
             const applied = applyDelta(base, data.delta);
-            if (typeof data.resultLength === 'number' && data.resultLength !== applied.length){
+            if (typeof data.resultLength === 'number' && data.resultLength !== applied.length) {
               throw new Error('result length mismatch');
             }
-            if (replaceTextPreserveCaret(applied)){
+            if (replaceTextPreserveCaret(applied)) {
               needsRender = true;
               textChanged = true;
             }
-          } catch(err){
+          } catch(err) {
             console.warn('[Collab] Failed to apply delta, requesting sync', err);
             requestSync();
             return;
           }
-          stateChanged = textChanged;
         }
-        if (textChanged) stateChanged = true;
 
-        if (data.mode === 'classic' || data.mode === 'mixed'){
-          if (mode !== data.mode){
+        if (data.mode === 'classic' || data.mode === 'mixed') {
+          if (mode !== data.mode) {
             mode = data.mode;
             modeToggle.checked = (mode === 'classic');
-            document.body.classList.toggle('mixed',   mode === 'mixed');
+            document.body.classList.toggle('mixed', mode === 'mixed');
             document.body.classList.toggle('classic', mode === 'classic');
             modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
-            modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
-            editor.placeholder    = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
-            try { localStorage.setItem(LS_MODE, mode); } catch(e){}
+            modeDesc.textContent = (mode === 'classic') ? 
+              'Classic: each new line is rendered as display math.' : 
+              'Mixed: type text with $inline$ and $$display$$ math.';
+            editor.placeholder = (mode === 'classic') ? 
+              'Type lines of pure TeX; each line renders as display math' : 
+              'Type text with $inline$ and $$display$$ math';
+            try { localStorage.setItem(LS_MODE, mode); } catch(e) {}
             needsRender = true;
             stateChanged = true;
           }
@@ -1299,28 +1433,22 @@
         else if (peerId) ensurePeerMeta(peerId);
         if (data.cursor) updateRemoteCursor(peerId, data.cursor);
 
-        if (textChanged || stateChanged){
-          pendingInitialSync = false;
-          joinWarningDismissed = true;
-          if (joinPop) joinPop.style.display = 'none';
-          resetBroadcastCache();
-        } else if (pendingInitialSync && (data.kind === 'full' || typeof data.text === 'string')){
+        if (textChanged || stateChanged) {
           pendingInitialSync = false;
           joinWarningDismissed = true;
           if (joinPop) joinPop.style.display = 'none';
           resetBroadcastCache();
         }
-        if (needsRender){
+
+        if (needsRender) {
           render();
           updateAllRemoteCarets();
-        } else if (textChanged){
+        } else if (textChanged) {
           updateAllRemoteCarets();
         }
-        if (isRoomOwner && peerId && peerId !== CLIENT_ID){
-          sendFullState();
-        }
       }
-      function buildFullPayload(){
+
+      function buildFullPayload() {
         return {
           kind: 'full',
           text: editor.value,
@@ -1328,10 +1456,12 @@
           cursor: getCurrentCursor(),
           name: displayName.trim(),
           owner: isRoomOwner ? 1 : 0,
-          host: isRoomOwner ? CLIENT_ID : (hostId || null)
+          host: isRoomOwner ? CLIENT_ID : (hostId || null),
+          from: CLIENT_ID
         };
       }
-      function buildDeltaPayload(){
+
+      function buildDeltaPayload() {
         const current = editor.value;
         const payload = {
           kind: 'delta',
@@ -1341,33 +1471,34 @@
         let include = false;
 
         const deltaInfo = computeDelta(lastBroadcastText, current);
-        if (deltaInfo){
+        if (deltaInfo) {
           payload.delta = deltaInfo.delta;
           payload.baseLength = deltaInfo.baseLength;
           payload.resultLength = deltaInfo.resultLength;
           include = true;
         }
 
-        if (mode !== lastBroadcastMode){
+        if (mode !== lastBroadcastMode) {
           payload.mode = mode;
           include = true;
         }
 
         const trimmedName = displayName.trim();
-        if (trimmedName !== lastBroadcastName){
+        if (trimmedName !== lastBroadcastName) {
           payload.name = trimmedName;
           include = true;
         }
 
         const cursor = getCurrentCursor();
-        if (cursor.start !== lastBroadcastCursor.start || cursor.end !== lastBroadcastCursor.end){
+        if (cursor.start !== lastBroadcastCursor.start || cursor.end !== lastBroadcastCursor.end) {
           payload.cursor = cursor;
           include = true;
         }
 
         return include ? payload : null;
       }
-      function buildCursorPayload(force = false){
+
+      function buildCursorPayload(force = false) {
         const cursor = getCurrentCursor();
         const trimmedName = displayName.trim();
         const cursorChanged = cursor.start !== lastBroadcastCursor.start || cursor.end !== lastBroadcastCursor.end;
@@ -1375,75 +1506,101 @@
         if (!force && !cursorChanged && !nameChanged) return null;
         return { kind: 'cursor', cursor, name: trimmedName };
       }
-      function sendPayload(payload){
+
+      function sendPayload(payload) {
         if (!payload || !sendState || applying) return;
         try {
           payload.from = CLIENT_ID;
           payload.clock = ++localClock;
           payload.ts = Date.now();
           sendState(payload);
+          
           const trimmedName = displayName.trim();
-          if (payload.cursor){
+          if (payload.cursor) {
             lastBroadcastCursor = {
               start: payload.cursor.start || 0,
               end: payload.cursor.end || 0
             };
           }
-          if (typeof payload.name === 'string'){
+          if (typeof payload.name === 'string') {
             lastBroadcastName = payload.name;
-          } else if (payload.kind === 'full' || payload.kind === 'delta'){
+          } else if (payload.kind === 'full' || payload.kind === 'delta') {
             lastBroadcastName = trimmedName;
           }
-          if (payload.kind === 'full' || payload.kind === 'delta'){
+          if (payload.kind === 'full' || payload.kind === 'delta') {
             lastBroadcastText = editor.value;
             lastBroadcastMode = mode;
           }
-        } catch (err){
+        } catch (err) {
           console.warn('Collab send failed', err);
         }
       }
-      function sendFullState(){
+
+      function sendFullState() {
         if (!sendState || !isRoomOwner) return;
         const payload = buildFullPayload();
         sendPayload(payload);
       }
-      function sendDeltaState(){
+
+      function sendDeltaState() {
         if (pendingInitialSync) return;
         const payload = buildDeltaPayload();
         if (payload) sendPayload(payload);
       }
-      function sendCursorState(force = false){ const payload = buildCursorPayload(force); if (payload) sendPayload(payload); }
-      async function join(name){
+
+      function sendCursorState(force = false) {
+        const payload = buildCursorPayload(force);
+        if (payload) sendPayload(payload);
+      }
+
+      async function join(name) {
         const trimmed = (name || '').trim();
-        if (!trimmed){ alert('Enter a room code to connect.'); return; }
-        if (room && trimmed === roomName){ updateStatus(); return; }
+        if (!trimmed) {
+          alert('Enter a room code to connect.');
+          return;
+        }
+        
+        if (room && trimmed === roomName) {
+          updateStatus();
+          return;
+        }
+        
         if (!preflightChecks()) return;
+        
         cleanup();
         roomName = trimmed;
         roomInput.value = trimmed;
         setButton('connecting');
         setStatus('Connecting…');
+        
         try {
           const joinRoomFn = await ensureTrystero();
           room = await joinRoomFn(config, trimmed);
+          roomCreatedAt = Date.now();
         } catch (err) {
           console.error('Unable to join room:', err);
           room = null;
           roomName = '';
-          const msg = err && err.message === 'Trystero import failed' ? 'Trystero unavailable' : 'Connection failed';
+          roomCreatedAt = null;
+          const msg = err && err.message === 'Trystero import failed' 
+            ? 'Trystero unavailable' 
+            : 'Connection failed';
           setStatus(msg);
           setButton('disconnected');
           return;
         }
-        if (!room || typeof room.makeAction !== 'function'){
+        
+        if (!room || typeof room.makeAction !== 'function') {
           console.error('Trystero joinRoom did not return a room object');
           room = null;
           roomName = '';
+          roomCreatedAt = null;
           setStatus('Trystero unavailable');
           setButton('disconnected');
           return;
         }
-
+        
+        // Set up peer tracking
         peers.clear();
         const existingPeers = room.getPeers?.() || {};
         const existingIds = Object.keys(existingPeers);
@@ -1451,63 +1608,114 @@
           peers.add(id);
           ensurePeerMeta(id);
         });
-
-        const chosenHost = existingIds.length
-          ? [...existingIds].sort()[0]
-          : CLIENT_ID;
-        notifyHostAssigned(chosenHost);
-        pendingInitialSync = !isRoomOwner;
-        if (pendingInitialSync){
-          joinWarningDismissed = false;
-          maybeShowJoinWarning();
+        
+        console.log('[Collab] Joined room with', existingIds.length, 'existing peers');
+        
+        // Determine initial host status
+        if (existingIds.length === 0) {
+          // We're the first in the room - we're the host
+          console.log('[Collab] First in room - becoming host');
+          notifyHostAssigned(CLIENT_ID);
+          hasReceivedInitialSync = true;
+          pendingInitialSync = false;
+        } else {
+          // Others exist - we're joining, wait for sync
+          console.log('[Collab] Others in room - waiting for host');
+          hostId = null;
+          isRoomOwner = false;
+          hasReceivedInitialSync = false;
+          pendingInitialSync = true;
         }
+        
         updateStatus();
+        
+        // Set up messaging
         const [send, onState] = room.makeAction('state');
         sendState = (payload) => send(payload);
         unsubscribeState = onState((payload, peerId) => handleState(payload, peerId));
-        if (isRoomOwner){
-          sendFullState();
-        } else {
-          requestSync();
-        }
+        
+        // Set up peer join/leave handlers
         offJoin = room.onPeerJoin((peerId) => {
+          console.log('[Collab] Peer joined:', peerId.slice(0,6));
           peers.add(peerId);
           ensurePeerMeta(peerId);
           updateStatus();
           attachPeerDebug(peerId);
-          if (isRoomOwner){
-            sendFullState();
-            sendCursorState(true);
+          
+          // If we're the host, send state to new peer
+          if (isRoomOwner) {
+            // Small delay to ensure new peer is ready
+            setTimeout(() => {
+              console.log('[Collab] Sending state to new peer');
+              announceHost();
+              sendFullState();
+            }, 100);
           }
         });
+        
         offLeave = room.onPeerLeave((peerId) => {
+          console.log('[Collab] Peer left:', peerId.slice(0,6));
           peers.delete(peerId);
           removeRemotePeer(peerId);
-          if (peerId === hostId){
+          
+          // Handle host leaving
+          if (peerId === hostId) {
+            console.log('[Collab] Host left - determining new host');
             const survivors = [...peers, CLIENT_ID].filter(Boolean).sort();
             const nextHost = survivors[0] || CLIENT_ID;
-            notifyHostAssigned(nextHost);
-            if (isRoomOwner){
+            
+            if (nextHost === CLIENT_ID) {
+              // We're the new host
+              console.log('[Collab] Becoming new host');
+              notifyHostAssigned(CLIENT_ID);
+              hasReceivedInitialSync = true;
               pendingInitialSync = false;
-              sendFullState();
+              // Announce to remaining peers
+              setTimeout(() => {
+                announceHost();
+                sendFullState();
+              }, 100);
             } else {
+              // Someone else should be host
+              console.log('[Collab] Waiting for new host', nextHost.slice(0,6));
+              hostId = null;
+              isRoomOwner = false;
               pendingInitialSync = true;
-              joinWarningDismissed = false;
-              maybeShowJoinWarning();
-              requestSync();
+              hasReceivedInitialSync = false;
+              syncRequestCount = 0;
             }
           }
+          
           updateStatus();
         });
+        
         setButton('connected');
         updateStatus();
         resetBroadcastCache();
-        sendCursorState(true);
-        if (!isRoomOwner){
-          requestSync();
+        
+        // Initial actions based on role
+        if (isRoomOwner) {
+          // We're the first - announce as host
+          setTimeout(() => {
+            console.log('[Collab] Initial host announcement');
+            announceHost();
+            sendFullState();
+          }, 100);
+        } else {
+          // We're joining existing room - request sync after a moment
+          setTimeout(() => {
+            console.log('[Collab] Initial sync request');
+            requestSync();
+          }, 300);
         }
-        try { localStorage.setItem(LS_ROOM, roomName); } catch(e){}
+        
+        sendCursorState(true);
+        
+        try {
+          localStorage.setItem(LS_ROOM, roomName);
+        } catch(e) {}
       }
+
       const debugApi = {
         getModule: () => joinRoomImpl,
         getRelaySockets: () => joinRoomImpl?.getRelaySockets?.(),
@@ -1525,15 +1733,27 @@
             });
           });
         },
-        capabilities: {...capability}
+        capabilities: {...capability},
+        getHostInfo: () => ({
+          hostId,
+          isRoomOwner,
+          hasReceivedInitialSync,
+          pendingInitialSync,
+          roomCreatedAt,
+          peers: [...peers]
+        })
       };
-      if (typeof window !== 'undefined'){
+
+      if (typeof window !== 'undefined') {
         window.CollabDebug = debugApi;
       }
 
       return {
         join,
-        leave: () => { cleanup(); try { localStorage.removeItem(LS_ROOM); } catch(e){}; },
+        leave: () => { 
+          cleanup(); 
+          try { localStorage.removeItem(LS_ROOM); } catch(e){} 
+        },
         sendDelta: () => sendDeltaState(),
         sendFull: () => sendFullState(),
         sendCursor: (force = false) => sendCursorState(force),
