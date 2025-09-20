@@ -4,7 +4,7 @@
   <!-- Charset early for correct decoding -->
   <meta charset="UTF-8" />
   <!-- Title + Favicon (SVG data URL) -->
-  <title>LaTeX Lab</title>
+  <title>LaTeX Lab — Collaborative</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
 
 
@@ -100,6 +100,13 @@
        Toolbar
        ===================== */
     .toolbar{ border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.5rem; padding:.5rem 1rem; flex-wrap:wrap; }
+    .toolbar .fill{ flex:1 1 auto; }
+    .collab-controls{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .collab-controls input{ width:160px; padding:.35rem .55rem; border-radius:6px; border:1px solid var(--border); font-size:14px; }
+    #displayNameInput{ width:140px; }
+    .collab-controls button{ padding:.38rem .7rem; border-radius:6px; border:1px solid var(--border); background:rgba(255,255,255,.95); font-size:14px; cursor:pointer; }
+    body.dark .collab-controls button{ background:linear-gradient(#222,#1b1b1b); }
+    .collab-status{ font-size:12px; opacity:.75; min-width:140px; }
     .menu{ position:relative; display:inline-block }
     .menu-button, button{
       padding:.45em .7em; border-radius:6px; border:1px solid var(--border);
@@ -143,6 +150,27 @@
     #overlay::-webkit-scrollbar{ display:none; }  /* hide in Chromium/WebKit */
     #overlay .overlay-line{ width:100%; }
     #overlay .wrap-row{ width:100%; }
+    #remoteLayer{ position:absolute; inset:0; pointer-events:none; z-index:3; overflow:visible; }
+    .remote-caret{ position:absolute; top:0; left:0; display:block; pointer-events:none; font-size:12px; font-weight:600; }
+    @keyframes caretBlink { 0%,49%{ opacity:1; } 50%,99%{ opacity:0; } }
+    .remote-caret-bar{ width:2px; border-radius:1px; flex-shrink:0; animation: caretBlink 1.1s steps(1) infinite; position:absolute; top:0; left:0; }
+    .remote-caret-label{
+      position:absolute;
+      padding:2px 6px;
+      border-radius:999px;
+      color:#fff;
+      font-size:11px;
+      line-height:1.2;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+      white-space:nowrap;
+      opacity:0;
+      transition:opacity .14s;
+      pointer-events:none;
+      transform:translate(-50%,-120%);
+      left:50%;
+    }
+    .remote-caret.show-label .remote-caret-label{ opacity:1; }
+    .remote-caret.label-below .remote-caret-label{ transform:translate(-50%,140%); }
     #editor{
       position:relative; width:100%; height:100%; padding:.6em 1em .6em 1em; font-family:monospace; font-size:15px; line-height:1.5;
       border:none; outline:none; background:transparent; color:var(--text); resize:none; overflow:auto;
@@ -243,6 +271,8 @@
     .welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
     .welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
     body.dark .welcome-pop { background: #1e1e1e; }
+    .join-pop-option{ display:flex; align-items:center; gap:.4rem; font-size:12px; margin:0 0 .75rem; }
+    .join-pop-option input{ margin:0; }
     @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
     @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
   </style>
@@ -258,8 +288,14 @@
         <li id="insertCases">Cases</li>
       </ul>
     </div>
-    <button id="shareBtn" class="menu-button">🔗 Share link</button>
     <button id="macrosBtn" class="menu-button">⚡ Shortcuts</button>
+    <span class="fill"></span>
+    <div class="collab-controls" role="group" aria-label="Collaboration">
+      <input id="displayNameInput" type="text" placeholder="Your name" autocomplete="off" spellcheck="false" aria-label="Display name">
+      <input id="roomNameInput" type="text" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room name">
+      <button id="roomJoinBtn">Connect</button>
+      <span id="collabStatus" class="collab-status">Offline</span>
+    </div>
   </div>
 
 
@@ -399,12 +435,13 @@
     /* =====================
        Element refs
        ===================== */
-    const editor   = document.getElementById('editor');
-    const gutter   = document.getElementById('gutter');
-    const overlay  = document.getElementById('overlay');
-    const preview  = document.getElementById('preview');
-    const divider  = document.getElementById('divider');
-    const leftPane = document.getElementById('leftPane');
+    const editor    = document.getElementById('editor');
+    const gutter    = document.getElementById('gutter');
+    const overlay   = document.getElementById('overlay');
+    const preview   = document.getElementById('preview');
+    const divider   = document.getElementById('divider');
+    const leftPane  = document.getElementById('leftPane');
+    const editorWrap= document.getElementById('editorWrap');
 
 
     const modeToggle = document.getElementById('modeToggle');
@@ -415,7 +452,6 @@
 
     const pngBtn     = document.getElementById('pngBtn');
     const clearBtn   = document.getElementById('clearBtn');
-    const shareBtn   = document.getElementById('shareBtn');
 
 
     const measure  = document.getElementById('measure');
@@ -425,6 +461,262 @@
     const snippetsBtn  = document.getElementById('snippetsBtn');
     document.getElementById('openMatrixGen').addEventListener('click', ()=>{ snippetsMenu.classList.remove('open'); openMatrix(); });
     document.getElementById('openTableGen').addEventListener('click', ()=>{ snippetsMenu.classList.remove('open'); openTable(); });
+
+
+    /* =====================
+       Presence overlays
+       ===================== */
+    const remoteLayer = document.createElement('div');
+    remoteLayer.id = 'remoteLayer';
+    editorWrap.appendChild(remoteLayer);
+
+    const CLIENT_ID = (() => {
+      try {
+        const key = 'latexlab.clientId';
+        let id = sessionStorage.getItem(key);
+        if (!id){
+          id = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
+          sessionStorage.setItem(key, id);
+        }
+        return id;
+      } catch(e){
+        return Math.random().toString(36).slice(2);
+      }
+    })();
+
+    function maybeShowJoinWarning(){
+      if (!joinPop || joinWarningDismissed) return;
+      try { if (localStorage.getItem(LS_JOIN_WARNING) === '1') return; }
+      catch(e){}
+      if (joinPopDontShow) joinPopDontShow.checked = false;
+      joinPop.style.display = 'block';
+    }
+
+    let displayName = '';
+    let joinWarningDismissed = false;
+    function getCurrentCursor(){ return { start: editor.selectionStart || 0, end: editor.selectionEnd || 0 }; }
+    const remotePeers = new Map();
+    const peerMeta = new Map();
+    const CARET_STYLE_PROPS = [
+      'direction','boxSizing','width','height','overflowX','overflowY',
+      'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
+      'paddingTop','paddingRight','paddingBottom','paddingLeft',
+      'fontStyle','fontVariant','fontWeight','fontStretch','fontSize','fontSizeAdjust','lineHeight','fontFamily',
+      'textAlign','textTransform','textIndent','textDecoration','letterSpacing','wordSpacing','tabSize','MozTabSize'
+    ];
+    let caretMirror = null;
+
+    const CURSOR_COLOR_FALLBACKS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#f472b6','#14b8a6'];
+    function hashString(input=''){ let hash = 0; for (let i = 0; i < input.length; i++){ hash = ((hash << 5) - hash) + input.charCodeAt(i); hash |= 0; } return hash; }
+    function hslToHex(h, s, l){
+      const hue = ((h % 360) + 360) % 360;
+      const sat = Math.max(0, Math.min(100, s)) / 100;
+      const light = Math.max(0, Math.min(100, l)) / 100;
+      const a = sat * Math.min(light, 1 - light);
+      const f = (n) => {
+        const k = (n + hue / 30) % 12;
+        const color = light - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+        return Math.round(255 * Math.max(0, Math.min(1, color))).toString(16).padStart(2, '0');
+      };
+      return `#${f(0)}${f(8)}${f(4)}`;
+    }
+    function withAlpha(hex, alpha){
+      if (!hex) return `rgba(0,0,0,${alpha})`;
+      let normalized = hex.replace('#','');
+      if (normalized.length === 3){ normalized = normalized.split('').map(ch => ch + ch).join(''); }
+      if (normalized.length !== 6){ return `rgba(0,0,0,${alpha})`; }
+      const num = parseInt(normalized, 16);
+      const r = (num >> 16) & 255;
+      const g = (num >> 8) & 255;
+      const b = num & 255;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    function colorForPeer(peerId){
+      const hash = Math.abs(hashString(peerId || 'peer'));
+      const color = hslToHex(hash % 360, 78, 62);
+      if (color) return color;
+      return CURSOR_COLOR_FALLBACKS[hash % CURSOR_COLOR_FALLBACKS.length];
+    }
+    function fallbackNameForPeer(peerId){ return peerId ? `Peer ${peerId.slice(0,4)}` : 'Peer'; }
+    function ensurePeerMeta(peerId){
+      if (!peerId) return { color: '#888', name: '', display: 'Peer' };
+      let meta = peerMeta.get(peerId);
+      if (!meta){
+        meta = { color: colorForPeer(peerId), name: '', display: fallbackNameForPeer(peerId) };
+        peerMeta.set(peerId, meta);
+      }
+      return meta;
+    }
+    function ensureRemotePeerEntry(peerId){
+      if (!peerId) return null;
+      const meta = ensurePeerMeta(peerId);
+      let entry = remotePeers.get(peerId);
+      if (!entry){
+        const el = document.createElement('div');
+        el.className = 'remote-caret';
+        const label = document.createElement('div');
+        label.className = 'remote-caret-label';
+        const bar = document.createElement('div');
+        bar.className = 'remote-caret-bar';
+        el.appendChild(label);
+        el.appendChild(bar);
+        remoteLayer.appendChild(el);
+        entry = { el, bar, label, cursor: null, color: meta.color, name: meta.display, hover: false };
+        remotePeers.set(peerId, entry);
+      }
+      entry.color = meta.color;
+      entry.name = meta.display;
+      entry.label.textContent = entry.name;
+      entry.bar.style.backgroundColor = entry.color;
+      entry.label.style.backgroundColor = withAlpha(entry.color, 0.9);
+      entry.label.style.border = `1px solid ${withAlpha(entry.color, 0.6)}`;
+      return entry;
+    }
+    function updatePeerName(peerId, rawName){
+      if (!peerId) return;
+      const meta = ensurePeerMeta(peerId);
+      const normalized = (rawName || '').trim();
+      meta.name = normalized;
+      meta.display = normalized || fallbackNameForPeer(peerId);
+      const entry = remotePeers.get(peerId);
+      if (entry){
+        entry.name = meta.display;
+        entry.label.textContent = meta.display;
+        entry.bar.style.backgroundColor = meta.color;
+        entry.label.style.backgroundColor = withAlpha(meta.color, 0.9);
+        entry.label.style.border = `1px solid ${withAlpha(meta.color, 0.6)}`;
+        positionRemoteCaret(peerId, entry);
+      }
+    }
+    function removeRemotePeer(peerId){
+      const entry = remotePeers.get(peerId);
+      if (entry){ entry.el.remove(); remotePeers.delete(peerId); }
+      if (peerId) peerMeta.delete(peerId);
+    }
+    function updateRemoteCursor(peerId, cursor){
+      if (!peerId) return;
+      const entry = ensureRemotePeerEntry(peerId);
+      if (!entry) return;
+      if (!cursor || typeof cursor.start !== 'number' || typeof cursor.end !== 'number'){
+        entry.cursor = null;
+        entry.el.style.display = 'none';
+        return;
+      }
+      entry.cursor = { start: cursor.start, end: cursor.end };
+      positionRemoteCaret(peerId, entry);
+    }
+    function positionRemoteCaret(peerId, entry){
+      const target = entry || remotePeers.get(peerId);
+      if (!target) return;
+      if (!target.cursor){ target.el.style.display = 'none'; return; }
+      const textLength = editor.value.length;
+      const safeIndex = Math.max(0, Math.min(target.cursor.end ?? target.cursor.start ?? 0, textLength));
+      const coords = getCaretCoordinates(safeIndex);
+      if (!coords){ target.el.style.display = 'none'; return; }
+      const { x, y, height } = coords;
+      if (y < -height || y > editor.clientHeight + height){
+        target.el.style.display = 'none';
+        return;
+      }
+      if (x < -32 || x > editor.clientWidth + 32){
+        target.el.style.display = 'none';
+        return;
+      }
+      const showBelow = y < 18;
+      target.el.style.display = 'block';
+      target.el.style.transform = '';
+      target.el.style.top = `${Math.round(y)}px`;
+      target.el.style.left = `${Math.round(x)}px`;
+      const barHeight = Math.max(height, 12);
+      target.el.style.height = `${barHeight}px`;
+      target.el.style.width = '2px';
+      target.bar.style.position = 'absolute';
+      target.bar.style.top = '0';
+      target.bar.style.left = '0';
+      target.bar.style.width = '2px';
+      target.bar.style.height = `${barHeight}px`;
+      target.bar.style.backgroundColor = target.color;
+      target.label.style.backgroundColor = withAlpha(target.color, 0.9);
+      target.label.style.border = `1px solid ${withAlpha(target.color, 0.6)}`;
+      target.label.textContent = target.name;
+      target.el.classList.toggle('label-below', showBelow);
+      target.el.classList.toggle('show-label', !!target.hover);
+    }
+    function updateAllRemoteCarets(){ remotePeers.forEach((entry, peerId) => positionRemoteCaret(peerId, entry)); }
+    function ensureCaretMirror(){
+      if (caretMirror) return caretMirror;
+      const mirror = document.createElement('div');
+      mirror.id = 'caretMirror';
+      mirror.style.position = 'absolute';
+      mirror.style.top = '0';
+      mirror.style.left = '-9999px';
+      mirror.style.visibility = 'hidden';
+      mirror.style.pointerEvents = 'none';
+      mirror.style.whiteSpace = 'pre-wrap';
+      mirror.style.wordBreak = 'break-word';
+      mirror.style.wordWrap = 'break-word';
+      mirror.style.overflow = 'hidden';
+      document.body.appendChild(mirror);
+      caretMirror = mirror;
+      return mirror;
+    }
+    function getCaretCoordinates(index){
+      const textarea = editor;
+      const text = textarea.value || '';
+      const clamped = Math.max(0, Math.min(index, text.length));
+      const mirror = ensureCaretMirror();
+      const style = getComputedStyle(textarea);
+
+      // Copy relevant styles
+      CARET_STYLE_PROPS.forEach(prop => { mirror.style[prop] = style[prop]; });
+
+      // Use the *inner* content width (clientWidth minus padding) to match wrapping
+      const pl = parseFloat(style.paddingLeft)  || 0;
+      const pr = parseFloat(style.paddingRight) || 0;
+      const bt = parseFloat(style.borderTopWidth)  || 0;
+      const bl = parseFloat(style.borderLeftWidth) || 0;
+
+      mirror.style.width = (textarea.clientWidth - pl - pr) + 'px';
+      mirror.style.whiteSpace = 'pre-wrap';
+      mirror.style.wordBreak  = 'break-word';
+      mirror.style.wordWrap   = 'break-word';
+
+      // Build mirror content: text up to caret + a zero-width marker
+      mirror.textContent = '';
+      mirror.appendChild(document.createTextNode(text.slice(0, clamped)));
+
+      const marker = document.createElement('span');
+      marker.textContent = '\u200b';           // <-- zero-width probe, no remainder
+      mirror.appendChild(marker);
+
+      // Coordinates relative to the textarea's visible viewport
+      const left = marker.offsetLeft + bl - textarea.scrollLeft + 0;   // keep padding in X so caret aligns with text
+      const top  = marker.offsetTop  + bt - textarea.scrollTop;
+
+      // Derive a sane line height (don’t use marker.offsetHeight!)
+      const lh = parseFloat(style.lineHeight);
+      const fs = parseFloat(style.fontSize) || 16;
+      const lineHeight = Number.isFinite(lh) ? lh : Math.round(fs * 1.5);
+
+      mirror.textContent = '';
+
+      return { x: left, y: top, height: lineHeight };
+    }
+
+    function clearRemoteCaretHover(){ remotePeers.forEach(entry => { if (entry.hover){ entry.hover = false; entry.el.classList.remove('show-label'); } }); }
+    function handleRemoteCaretHover(clientX, clientY){
+      remotePeers.forEach(entry => {
+        if (!entry || entry.el.style.display === 'none'){ if (entry.hover){ entry.hover = false; entry.el.classList.remove('show-label'); } return; }
+        const rect = entry.el.getBoundingClientRect();
+        const isHover = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+        if (entry.hover !== isHover){
+          entry.hover = isHover;
+          entry.el.classList.toggle('show-label', isHover);
+        }
+      });
+    }
+    editorWrap.addEventListener('mousemove', (event) => handleRemoteCaretHover(event.clientX, event.clientY));
+    editorWrap.addEventListener('mouseleave', clearRemoteCaretHover);
 
 
     /* =====================
@@ -450,6 +742,24 @@
     const macrosSave  = document.getElementById('macrosSave');
     const macrosCancel= document.getElementById('macrosCancel');
     const macrosReset = document.getElementById('macrosReset');
+    const roomInput        = document.getElementById('roomNameInput');
+    const roomJoinBtn      = document.getElementById('roomJoinBtn');
+    const collabStatus     = document.getElementById('collabStatus');
+    const displayNameInput = document.getElementById('displayNameInput');
+    const joinPop          = document.getElementById('joinPop');
+    const joinPopDismiss   = document.getElementById('joinPopDismiss');
+    const joinPopDontShow  = document.getElementById('joinPopDontShow');
+
+    if (joinPopDismiss){
+      joinPopDismiss.addEventListener('click', () => {
+        if (joinPopDontShow && joinPopDontShow.checked){
+          try { localStorage.setItem(LS_JOIN_WARNING, '1'); }
+          catch(e){}
+        }
+        joinWarningDismissed = true;
+        joinPop.style.display = 'none';
+      });
+    }
 
 
     /* =====================
@@ -543,6 +853,9 @@
     const LS_MACROS  = 'latexlab.macros.v2';
     const LS_CURSOR  = 'latexlab.cursor.v1';
     const LS_SCROLL  = 'latexlab.scroll.v1';
+    const LS_NAME    = 'latexlab.name.v1';
+    const LS_ROOM    = 'latexlab.collab.room.v1';
+    const LS_JOIN_WARNING = 'latexlab.joinwarning.v2';
 
 
     const DEFAULT_MACROS = { "\\abs":  "\\left|#1\\right|", "\\norm": "\\left\\lVert#1\\right\\rVert" };
@@ -684,6 +997,577 @@
 
       return { syncOverlayAndMirror, scheduleRebuild, forceRebuild: () => rebuildGuides({ force: true }), invalidateCache };
     })();
+
+
+    /* =====================
+       Collaboration (Trystero)
+       ===================== */
+    const Collab = (() => {
+      const config = { appId: 'latex-lab-trystero-v1' };
+      let room = null;
+      let roomName = '';
+      let sendState = null;
+      let unsubscribeState = null;
+      let offJoin = null;
+      let offLeave = null;
+      const peers = new Set();
+      const remoteClocks = new Map();
+      let localClock = 0;
+      let lastRemoteClock = 0;
+      let applying = false;
+      let joinRoomImpl = null;
+      let loadPromise = null;
+      const debuggedPeers = new Set();
+      let isRoomOwner = false;
+      let pendingInitialSync = false;
+      let currentOwner = null;
+      let hostId = null;
+
+      let lastBroadcastText = editor.value || '';
+      let lastBroadcastMode = mode;
+      let lastBroadcastCursor = getCurrentCursor();
+      let lastBroadcastName = '';
+
+      function resetBroadcastCache(){
+        lastBroadcastText = editor.value || '';
+        lastBroadcastMode = mode;
+        lastBroadcastCursor = getCurrentCursor();
+        lastBroadcastName = displayName.trim();
+      }
+      function notifyHostAssigned(id){
+        hostId = id || null;
+        isRoomOwner = hostId === CLIENT_ID;
+        currentOwner = hostId;
+        if (isRoomOwner){
+          pendingInitialSync = false;
+          joinWarningDismissed = true;
+          if (joinPop) joinPop.style.display = 'none';
+          resetBroadcastCache();
+        }
+      }
+      const capability = {
+        secureContext: typeof isSecureContext !== 'undefined'
+          ? (isSecureContext || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname))
+          : false,
+        hasWebRTC: typeof RTCPeerConnection === 'function',
+        hasCrypto: !!(globalThis.crypto && globalThis.crypto.subtle)
+      };
+
+      function preflightChecks(){
+        const missing = [];
+        if (!capability.secureContext) missing.push('secure origin');
+        if (!capability.hasWebRTC) missing.push('WebRTC');
+        if (!capability.hasCrypto) missing.push('WebCrypto');
+        if (!missing.length) return true;
+        setStatus('Unavailable: ' + missing.join(', '));
+        setButton('disconnected');
+        console.warn('[Collab] Collaboration disabled, missing:', missing);
+        return false;
+      }
+
+      function setStatus(text){ if (collabStatus) collabStatus.textContent = text; }
+      function setButton(state){
+        if (!roomJoinBtn) return;
+        if (state === 'connected'){ roomJoinBtn.textContent = 'Disconnect'; roomJoinBtn.disabled = false; }
+        else if (state === 'connecting'){ roomJoinBtn.textContent = 'Connecting…'; roomJoinBtn.disabled = true; }
+        else { roomJoinBtn.textContent = 'Connect'; roomJoinBtn.disabled = false; }
+      }
+      function updateStatus(){
+        if (!room){ setStatus('Offline'); return; }
+        const count = peers.size;
+        const peerLabel = count ? `${count} peer${count === 1 ? '' : 's'}` : 'solo';
+        setStatus(`Room ${roomName} · ${peerLabel}`);
+      }
+      async function ensureTrystero(){
+        if (joinRoomImpl) return joinRoomImpl;
+        if (!loadPromise){
+          const sources = [
+            './trystero-mqtt.min.js'
+          ];
+          loadPromise = (async () => {
+            for (const url of sources){
+              try {
+                const mod = await import(url);
+                if (typeof window !== 'undefined'){
+                  window.__TrysteroModule = mod;
+                }
+                const candidate = mod?.joinRoom || mod?.default;
+                if (typeof candidate === 'function') return candidate;
+                console.warn('Trystero import missing joinRoom from', url);
+              } catch (err) {
+                console.warn('Trystero import failed from', url, err);
+              }
+            }
+            return null;
+          })();
+        }
+        const fn = await loadPromise;
+        if (!fn) throw new Error('Trystero import failed');
+        joinRoomImpl = fn;
+        return joinRoomImpl;
+      }
+      function cleanup(){
+        if (unsubscribeState){ try { unsubscribeState(); } catch(e){} unsubscribeState = null; }
+        if (offJoin){ try { offJoin(); } catch(e){} offJoin = null; }
+        if (offLeave){ try { offLeave(); } catch(e){} offLeave = null; }
+        if (room){ try { room.leave(); } catch(e){} room = null; }
+        sendState = null;
+        roomName = '';
+        peers.clear();
+        remoteClocks.clear();
+        debuggedPeers.clear();
+        localClock = 0;
+        lastRemoteClock = 0;
+        applying = false;
+        isRoomOwner = false;
+        pendingInitialSync = false;
+        currentOwner = null;
+        hostId = null;
+        joinWarningDismissed = false;
+        Array.from(remotePeers.keys()).forEach(removeRemotePeer);
+        peerMeta.clear();
+        resetBroadcastCache();
+        if (joinPop) joinPop.style.display = 'none';
+        setButton('disconnected');
+        updateStatus();
+      }
+      function replaceTextPreserveCaret(newText){
+        if (editor.value === newText) return false;
+        const wasFocused = (document.activeElement === editor);
+        const prevStart = editor.selectionStart;
+        const prevEnd = editor.selectionEnd;
+        editor.value = newText;
+        if (wasFocused){
+          const len = newText.length;
+          editor.selectionStart = Math.min(prevStart, len);
+          editor.selectionEnd = Math.min(prevEnd, len);
+        }
+        try { localStorage.setItem(LS_CONTENT, newText); } catch(e){}
+        return true;
+      }
+      function computeDelta(prev, next){
+        if (prev === next) return null;
+        const prevLen = prev.length;
+        const nextLen = next.length;
+        let start = 0;
+        while (start < prevLen && start < nextLen && prev.charCodeAt(start) === next.charCodeAt(start)) start++;
+        let endPrev = prevLen;
+        let endNext = nextLen;
+        while (endPrev > start && endNext > start && prev.charCodeAt(endPrev - 1) === next.charCodeAt(endNext - 1)){
+          endPrev--;
+          endNext--;
+        }
+        const remove = endPrev - start;
+        const insert = next.slice(start, endNext);
+        return {
+          delta: { index: start, remove, insert },
+          baseLength: prevLen,
+          resultLength: nextLen
+        };
+      }
+      function applyDelta(base, delta){
+        const { index, remove, insert } = delta || {};
+        if (typeof index !== 'number' || typeof remove !== 'number' || index < 0 || remove < 0 || index > base.length){
+          throw new Error('Invalid delta');
+        }
+        const prefix = base.slice(0, index);
+        const toRemove = base.slice(index, index + remove);
+        if (toRemove.length !== remove){
+          throw new Error('Delta remove range out of bounds');
+        }
+        const suffix = base.slice(index + remove);
+        return prefix + (insert || '') + suffix;
+      }
+      function requestSync(){
+        if (!sendState) return;
+        try { sendState({ kind:'request', clock: ++localClock, ts: Date.now() }); }
+        catch(e){}
+      }
+      function handleState(payload = {}, peerId){
+        if (!payload) return;
+        const source = peerId || payload.sender || 'remote';
+        const senderId = payload.from || source;
+        if (senderId === CLIENT_ID) return;
+        if (payload.kind === 'request'){
+          if (isRoomOwner) sendFullState();
+          sendCursorState(true);
+          return;
+        }
+        const prev = remoteClocks.get(source) || 0;
+        if (typeof payload.clock === 'number'){
+          if (payload.clock <= prev) return;
+          remoteClocks.set(source, payload.clock);
+          if (payload.clock > lastRemoteClock) lastRemoteClock = payload.clock;
+        }
+        if (pendingInitialSync && (payload.kind === 'full' || typeof payload.text === 'string' || payload.delta)){
+          maybeShowJoinWarning();
+        }
+        if (payload.kind === 'full' || payload.kind === 'delta'){
+          const messageHost = payload.host || senderId;
+          if (!hostId || hostId === messageHost){
+            hostId = messageHost;
+          }
+        }
+        if (payload.kind === 'cursor'){
+          if (typeof payload.name === 'string') updatePeerName(source, payload.name);
+          if (payload.cursor) updateRemoteCursor(source, payload.cursor);
+          return;
+        }
+        applying = true;
+        try { applyRemoteState(payload, source); }
+        finally { applying = false; }
+      }
+      function attachPeerDebug(peerId){
+        if (!room || debuggedPeers.has(peerId)) return;
+        const peersMap = room.getPeers?.();
+        const entry = peersMap ? peersMap[peerId] : null;
+        if (!entry || !entry.connection) return;
+        const pc = entry.connection;
+        debuggedPeers.add(peerId);
+        const idLabel = peerId ? peerId.slice(0, 6) : 'unknown';
+        const prefix = `[Collab ${idLabel}]`;
+        const logConn = () => console.log(prefix, 'connectionstate', pc.connectionState);
+        const logIce = () => console.log(prefix, 'iceconnectionstate', pc.iceConnectionState);
+        const logGather = () => console.log(prefix, 'icegatheringstate', pc.iceGatheringState);
+        pc.addEventListener('connectionstatechange', logConn);
+        pc.addEventListener('iceconnectionstatechange', logIce);
+        pc.addEventListener('icegatheringstatechange', logGather);
+        logConn();
+        logIce();
+        logGather();
+      }
+      function applyRemoteState(data, peerId){
+        let needsRender = false;
+        let textChanged = false;
+        let stateChanged = false;
+
+        if (typeof data.owner === 'number' && data.owner === 1){
+          const hostCandidate = data.host || peerId || null;
+          notifyHostAssigned(hostCandidate);
+          pendingInitialSync = false;
+          joinWarningDismissed = true;
+          if (joinPop) joinPop.style.display = 'none';
+        }
+
+        if (typeof data.text === 'string'){
+          if (replaceTextPreserveCaret(data.text)){
+            needsRender = true;
+            textChanged = true;
+          }
+        } else if (data.delta){
+          const base = editor.value;
+          if (typeof data.baseLength === 'number' && data.baseLength !== base.length){
+            console.warn('[Collab] Delta base length mismatch, requesting sync');
+            requestSync();
+            return;
+          }
+          try {
+            const applied = applyDelta(base, data.delta);
+            if (typeof data.resultLength === 'number' && data.resultLength !== applied.length){
+              throw new Error('result length mismatch');
+            }
+            if (replaceTextPreserveCaret(applied)){
+              needsRender = true;
+              textChanged = true;
+            }
+          } catch(err){
+            console.warn('[Collab] Failed to apply delta, requesting sync', err);
+            requestSync();
+            return;
+          }
+          stateChanged = textChanged;
+        }
+        if (textChanged) stateChanged = true;
+
+        if (data.mode === 'classic' || data.mode === 'mixed'){
+          if (mode !== data.mode){
+            mode = data.mode;
+            modeToggle.checked = (mode === 'classic');
+            document.body.classList.toggle('mixed',   mode === 'mixed');
+            document.body.classList.toggle('classic', mode === 'classic');
+            modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
+            modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
+            editor.placeholder    = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
+            try { localStorage.setItem(LS_MODE, mode); } catch(e){}
+            needsRender = true;
+            stateChanged = true;
+          }
+        }
+
+        if (typeof data.name === 'string') updatePeerName(peerId, data.name);
+        else if (peerId) ensurePeerMeta(peerId);
+        if (data.cursor) updateRemoteCursor(peerId, data.cursor);
+
+        if (textChanged || stateChanged){
+          pendingInitialSync = false;
+          joinWarningDismissed = true;
+          if (joinPop) joinPop.style.display = 'none';
+          resetBroadcastCache();
+        } else if (pendingInitialSync && (data.kind === 'full' || typeof data.text === 'string')){
+          pendingInitialSync = false;
+          joinWarningDismissed = true;
+          if (joinPop) joinPop.style.display = 'none';
+          resetBroadcastCache();
+        }
+        if (needsRender){
+          render();
+          updateAllRemoteCarets();
+        } else if (textChanged){
+          updateAllRemoteCarets();
+        }
+        if (isRoomOwner && peerId && peerId !== CLIENT_ID){
+          sendFullState();
+        }
+      }
+      function buildFullPayload(){
+        return {
+          kind: 'full',
+          text: editor.value,
+          mode,
+          cursor: getCurrentCursor(),
+          name: displayName.trim(),
+          owner: isRoomOwner ? 1 : 0,
+          host: isRoomOwner ? CLIENT_ID : (hostId || null)
+        };
+      }
+      function buildDeltaPayload(){
+        const current = editor.value;
+        const payload = {
+          kind: 'delta',
+          owner: isRoomOwner ? 1 : 0,
+          host: isRoomOwner ? CLIENT_ID : (hostId || null)
+        };
+        let include = false;
+
+        const deltaInfo = computeDelta(lastBroadcastText, current);
+        if (deltaInfo){
+          payload.delta = deltaInfo.delta;
+          payload.baseLength = deltaInfo.baseLength;
+          payload.resultLength = deltaInfo.resultLength;
+          include = true;
+        }
+
+        if (mode !== lastBroadcastMode){
+          payload.mode = mode;
+          include = true;
+        }
+
+        const trimmedName = displayName.trim();
+        if (trimmedName !== lastBroadcastName){
+          payload.name = trimmedName;
+          include = true;
+        }
+
+        const cursor = getCurrentCursor();
+        if (cursor.start !== lastBroadcastCursor.start || cursor.end !== lastBroadcastCursor.end){
+          payload.cursor = cursor;
+          include = true;
+        }
+
+        return include ? payload : null;
+      }
+      function buildCursorPayload(force = false){
+        const cursor = getCurrentCursor();
+        const trimmedName = displayName.trim();
+        const cursorChanged = cursor.start !== lastBroadcastCursor.start || cursor.end !== lastBroadcastCursor.end;
+        const nameChanged = trimmedName !== lastBroadcastName;
+        if (!force && !cursorChanged && !nameChanged) return null;
+        return { kind: 'cursor', cursor, name: trimmedName };
+      }
+      function sendPayload(payload){
+        if (!payload || !sendState || applying) return;
+        try {
+          payload.from = CLIENT_ID;
+          payload.clock = ++localClock;
+          payload.ts = Date.now();
+          sendState(payload);
+          const trimmedName = displayName.trim();
+          if (payload.cursor){
+            lastBroadcastCursor = {
+              start: payload.cursor.start || 0,
+              end: payload.cursor.end || 0
+            };
+          }
+          if (typeof payload.name === 'string'){
+            lastBroadcastName = payload.name;
+          } else if (payload.kind === 'full' || payload.kind === 'delta'){
+            lastBroadcastName = trimmedName;
+          }
+          if (payload.kind === 'full' || payload.kind === 'delta'){
+            lastBroadcastText = editor.value;
+            lastBroadcastMode = mode;
+          }
+        } catch (err){
+          console.warn('Collab send failed', err);
+        }
+      }
+      function sendFullState(){
+        if (!sendState || !isRoomOwner) return;
+        const payload = buildFullPayload();
+        sendPayload(payload);
+      }
+      function sendDeltaState(){
+        if (pendingInitialSync) return;
+        const payload = buildDeltaPayload();
+        if (payload) sendPayload(payload);
+      }
+      function sendCursorState(force = false){ const payload = buildCursorPayload(force); if (payload) sendPayload(payload); }
+      async function join(name){
+        const trimmed = (name || '').trim();
+        if (!trimmed){ alert('Enter a room code to connect.'); return; }
+        if (room && trimmed === roomName){ updateStatus(); return; }
+        if (!preflightChecks()) return;
+        cleanup();
+        roomName = trimmed;
+        roomInput.value = trimmed;
+        setButton('connecting');
+        setStatus('Connecting…');
+        try {
+          const joinRoomFn = await ensureTrystero();
+          room = await joinRoomFn(config, trimmed);
+        } catch (err) {
+          console.error('Unable to join room:', err);
+          room = null;
+          roomName = '';
+          const msg = err && err.message === 'Trystero import failed' ? 'Trystero unavailable' : 'Connection failed';
+          setStatus(msg);
+          setButton('disconnected');
+          return;
+        }
+        if (!room || typeof room.makeAction !== 'function'){
+          console.error('Trystero joinRoom did not return a room object');
+          room = null;
+          roomName = '';
+          setStatus('Trystero unavailable');
+          setButton('disconnected');
+          return;
+        }
+
+        peers.clear();
+        const existingPeers = room.getPeers?.() || {};
+        const existingIds = Object.keys(existingPeers);
+        existingIds.forEach(id => {
+          peers.add(id);
+          ensurePeerMeta(id);
+        });
+
+        const chosenHost = existingIds.length
+          ? [...existingIds].sort()[0]
+          : CLIENT_ID;
+        notifyHostAssigned(chosenHost);
+        pendingInitialSync = !isRoomOwner;
+        if (pendingInitialSync){
+          joinWarningDismissed = false;
+          maybeShowJoinWarning();
+        }
+        updateStatus();
+        const [send, onState] = room.makeAction('state');
+        sendState = (payload) => send(payload);
+        unsubscribeState = onState((payload, peerId) => handleState(payload, peerId));
+        if (isRoomOwner){
+          sendFullState();
+        } else {
+          requestSync();
+        }
+        offJoin = room.onPeerJoin((peerId) => {
+          peers.add(peerId);
+          ensurePeerMeta(peerId);
+          updateStatus();
+          attachPeerDebug(peerId);
+          if (isRoomOwner){
+            sendFullState();
+            sendCursorState(true);
+          }
+        });
+        offLeave = room.onPeerLeave((peerId) => {
+          peers.delete(peerId);
+          removeRemotePeer(peerId);
+          if (peerId === hostId){
+            const survivors = [...peers, CLIENT_ID].filter(Boolean).sort();
+            const nextHost = survivors[0] || CLIENT_ID;
+            notifyHostAssigned(nextHost);
+            if (isRoomOwner){
+              pendingInitialSync = false;
+              sendFullState();
+            } else {
+              pendingInitialSync = true;
+              joinWarningDismissed = false;
+              maybeShowJoinWarning();
+              requestSync();
+            }
+          }
+          updateStatus();
+        });
+        setButton('connected');
+        updateStatus();
+        resetBroadcastCache();
+        sendCursorState(true);
+        if (!isRoomOwner){
+          requestSync();
+        }
+        try { localStorage.setItem(LS_ROOM, roomName); } catch(e){}
+      }
+      const debugApi = {
+        getModule: () => joinRoomImpl,
+        getRelaySockets: () => joinRoomImpl?.getRelaySockets?.(),
+        getPeers: () => room?.getPeers?.(),
+        printPeerStates: () => {
+          const map = room?.getPeers?.() || {};
+          Object.entries(map).forEach(([id, peer]) => {
+            const pc = peer.connection;
+            if (!pc) return;
+            console.log(`[Collab ${id.slice(0,6)}]`, {
+              connectionState: pc.connectionState,
+              iceConnectionState: pc.iceConnectionState,
+              iceGatheringState: pc.iceGatheringState,
+              signalingState: pc.signalingState
+            });
+          });
+        },
+        capabilities: {...capability}
+      };
+      if (typeof window !== 'undefined'){
+        window.CollabDebug = debugApi;
+      }
+
+      return {
+        join,
+        leave: () => { cleanup(); try { localStorage.removeItem(LS_ROOM); } catch(e){}; },
+        sendDelta: () => sendDeltaState(),
+        sendFull: () => sendFullState(),
+        sendCursor: (force = false) => sendCursorState(force),
+        isConnected: () => !!room,
+        isApplying: () => applying,
+        cleanup,
+        updateStatus,
+        debug: debugApi,
+        requestSync
+      };
+    })();
+
+    const notifyNameChange = () => {
+      Collab.updateStatus();
+      if (Collab.isConnected() && !Collab.isApplying()){
+        Collab.sendCursor(true);
+      }
+    };
+    displayNameInput.addEventListener('input', () => {
+      const raw = displayNameInput.value || '';
+      displayName = raw.trim();
+      try { localStorage.setItem(LS_NAME, raw); } catch(e){}
+      notifyNameChange();
+    });
+    const broadcastCursorPosition = () => {
+      if (Collab.isConnected() && !Collab.isApplying()){
+        Collab.sendCursor();
+      }
+    };
+    editor.addEventListener('select', broadcastCursorPosition);
+    editor.addEventListener('keyup', broadcastCursorPosition);
+    editor.addEventListener('mouseup', broadcastCursorPosition);
+    editor.addEventListener('focus', () => {
+      broadcastCursorPosition();
+    });
     /* =====================
        Render pipeline
        ===================== */
@@ -708,6 +1592,7 @@
         }
       }
       Guides.scheduleRebuild();
+      updateAllRemoteCarets();
     }
 
 
@@ -720,13 +1605,20 @@
       gutter.scrollTop  = editor.scrollTop;
       overlay.scrollTop = editor.scrollTop;
       preview.scrollTop = ratio * Math.max(0, (preview.scrollHeight - preview.clientHeight));
+      updateAllRemoteCarets();
     });
 
 
     /* =====================
        Mode / Theme toggles
        ===================== */
-    editor.addEventListener('input', () => { render(); try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){} });
+    editor.addEventListener('input', () => {
+      render();
+      updateAllRemoteCarets();
+      try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){}
+      if (!Collab.isApplying()) Collab.sendDelta();
+      broadcastCursorPosition();
+    });
 
 
     modeToggle.addEventListener('change', () => {
@@ -738,6 +1630,7 @@
       document.body.classList.toggle('classic', mode === 'classic');
       try { localStorage.setItem(LS_MODE, mode); } catch(e) {}
       render();
+      if (!Collab.isApplying()) Collab.sendDelta();
     });
 
 
@@ -764,7 +1657,10 @@
         const re = /^ {1,2}/gm; const before = val.slice(lineStart, end); const block = before.replace(re, ''); const removed = (before.match(re) || []).reduce((a,s)=>a+s.length,0);
         editor.setRangeText(block, lineStart, end, 'end'); editor.selectionStart = Math.max(lineStart, start - Math.min(2, removed)); editor.selectionEnd = Math.max(lineStart, end - removed);
       }
-      render(); try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){}
+      render(); updateAllRemoteCarets();
+      try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){}
+      broadcastCursorPosition();
+      if (!Collab.isApplying()) Collab.sendDelta();
     });
 
 
@@ -1019,7 +1915,16 @@
     /* =====================
        Clear
        ===================== */
-    clearBtn.addEventListener('click', () => { if (!confirm('Clear editor and saved text?')) return; editor.value=''; try { localStorage.removeItem(LS_CONTENT); } catch(e){} try { history.replaceState(null, '', location.pathname + location.search); } catch(e){} render(); });
+    clearBtn.addEventListener('click', () => {
+      if (!confirm('Clear editor and saved text?')) return;
+      editor.value='';
+      try { localStorage.removeItem(LS_CONTENT); } catch(e){}
+      try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
+      render();
+      updateAllRemoteCarets();
+      if (!Collab.isApplying()) Collab.sendDelta();
+      broadcastCursorPosition();
+    });
 
 
     /* =====================
@@ -1045,6 +1950,7 @@
         preview.style.flex = '1 1 auto';
         Guides.syncOverlayAndMirror();
         Guides.scheduleRebuild();
+        updateAllRemoteCarets();
       }
 
       function persistWidth(px){
@@ -1161,7 +2067,18 @@
 
 
     function clampInt(v,min,max){ v=parseInt(v||min,10); return Math.max(min,Math.min(max,isNaN(v)?min:v)); }
-    function insertAtCursor(text){ const el=editor, start=el.selectionStart, end=el.selectionEnd; el.value = el.value.slice(0,start) + text + el.value.slice(end); el.selectionStart = el.selectionEnd = start + text.length; el.focus(); render(); try { localStorage.setItem(LS_CONTENT, el.value); } catch(e){} }
+    function insertAtCursor(text){
+      const el = editor;
+      const start = el.selectionStart, end = el.selectionEnd;
+      el.value = el.value.slice(0,start) + text + el.value.slice(end);
+      el.selectionStart = el.selectionEnd = start + text.length;
+      el.focus();
+      render();
+      updateAllRemoteCarets();
+      try { localStorage.setItem(LS_CONTENT, el.value); } catch(e){}
+      if (!Collab.isApplying()) Collab.sendDelta();
+      broadcastCursorPosition();
+    }
 
 
     /* =====================
@@ -1540,7 +2457,6 @@
     })();
 
 
-    function compressState(state){ try { return LZString.compressToEncodedURIComponent(JSON.stringify(state)); } catch(e){ return ''; } }
     function decompressState(token){
       if (!token) return null;
       try {
@@ -1552,39 +2468,10 @@
 
 
     /* =====================
-       Share (URL hash) with compressed payload (legacy-safe)
+       Legacy hash loading
        ===================== */
-    function b64encode(str){ const bytes = new TextEncoder().encode(str); let bin=''; bytes.forEach(b => bin += String.fromCharCode(b)); return btoa(bin); }
     function b64decode(b64){ const bin=atob(b64); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
-
-
-    function encodeStateToUrl(){
-      const leftWidth = leftPane.getBoundingClientRect().width;
-      const state = { t: editor.value, m: (mode === 'classic') ? 1 : 0, d: darkToggle.checked ? 1 : 0, s: leftWidth, x: MACROS };
-      const compressed = compressState(state);
-      const payload = compressed || b64encode(JSON.stringify(state));
-      const shareUrl = new URL(location.href);
-      shareUrl.hash = 'state=' + payload;
-      if (history.replaceState){
-        history.replaceState(null, '', shareUrl.toString());
-      } else {
-        location.hash = 'state=' + payload;
-      }
-      return shareUrl.toString();
-    }
     function tryLoadStateFromHash(){ const m=location.hash.match(/state=([^&]+)/); if(!m) return false; const token=m[1]; let st = decompressState(token); if (!st){ try { st = JSON.parse(b64decode(token)); } catch(e){ return false; } } if (typeof st.t === 'string') editor.value = st.t; modeToggle.checked = (st.m===1); mode = modeToggle.checked ? 'classic' : 'mixed'; document.body.classList.toggle('dark', st.d===1); darkToggle.checked = (st.d===1); if (typeof st.s === 'number' && !Number.isNaN(st.s)){ leftPane.style.flex=`0 0 ${st.s}px`; preview.style.flex=`1 1 auto`; try { localStorage.setItem(LS_SPLITPX, String(st.s)); } catch(e){} } if (st.x && typeof st.x === 'object') { MACROS = normalizeMacros(st.x); try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){} } modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed'; modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.'; editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math'; return true; }
-
-
-    shareBtn.addEventListener('click', async () => {
-      const url = encodeStateToUrl();
-      try {
-        await navigator.clipboard.writeText(url);
-        shareBtn.textContent = '✅ Copied!';
-        setTimeout(() => shareBtn.textContent = '🔗 Share link', 1200);
-      } catch(e){
-        prompt('Copy this link:', url);
-      }
-    });
 
 
     /* Close Insert menu on outside click */
@@ -1622,7 +2509,10 @@
 
       // Skip over existing closer when appropriate (not for openers—we rely on explicit logic below)
       if (CLOSERS.has(e.key) && !hasSel && nextChar === e.key) {
-        e.preventDefault(); editor.selectionStart = editor.selectionEnd = end + 1; return;
+        e.preventDefault();
+        editor.selectionStart = editor.selectionEnd = end + 1;
+        broadcastCursorPosition();
+        return;
       }
 
 
@@ -1664,7 +2554,10 @@
 
 
         render();
+        updateAllRemoteCarets();
         try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+        if (!Collab.isApplying()) Collab.sendDelta();
+        broadcastCursorPosition();
         return;
       }
 
@@ -1676,7 +2569,11 @@
         const before = editor.value.slice(0, start); const selected = editor.value.slice(start, end); const after = editor.value.slice(end);
         editor.value = before + open + selected + close + after;
         if (hasSel) { editor.selectionStart = start + 1; editor.selectionEnd = end + 1; } else { editor.selectionStart = editor.selectionEnd = start + 1; }
-        render(); try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+        render();
+        updateAllRemoteCarets();
+        try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+        if (!Collab.isApplying()) Collab.sendDelta();
+        broadcastCursorPosition();
         return;
       }
     });
@@ -1704,6 +2601,14 @@
        Init sequence
        ===================== */
     window.addEventListener('load', () => {
+      try { const savedRoom = localStorage.getItem(LS_ROOM); if (savedRoom) roomInput.value = savedRoom; } catch(e){}
+      try {
+        const rawName = localStorage.getItem(LS_NAME) || '';
+        displayNameInput.value = rawName;
+        displayName = rawName.trim();
+        notifyNameChange();
+      } catch(e){}
+      try { if (localStorage.getItem(LS_JOIN_WARNING) === '1') joinWarningDismissed = true; } catch(e){}
       const loadedFromHash = tryLoadStateFromHash();
       if (!loadedFromHash){
         try { const saved = localStorage.getItem(LS_CONTENT); if (saved != null) editor.value = saved; } catch(e){}
@@ -1758,7 +2663,9 @@
       });
       editor.focus();
     });
-    window.addEventListener('resize', () => { Guides.syncOverlayAndMirror(); Guides.scheduleRebuild({ force: true }); });
+    window.addEventListener('resize', () => { Guides.syncOverlayAndMirror(); Guides.scheduleRebuild({ force: true }); updateAllRemoteCarets(); });
+
+    window.addEventListener('beforeunload', () => { if (Collab.isConnected()) Collab.cleanup(); });
 
 
     /* =====================
@@ -1782,6 +2689,7 @@
 
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if (joinPop && joinPop.style.display === 'block'){ joinWarningDismissed = true; joinPop.style.display = 'none'; return; }
       if (matrixModal.classList.contains('show')) { matrixModal.classList.remove('show'); return; }
       if (tableModal .classList.contains('show')) { tableModal .classList.remove('show'); return; }
       if (macrosModal.classList.contains('show')) { macrosModal.classList.remove('show'); return; }
@@ -1793,7 +2701,12 @@
        ===================== */
     macrosBtn.addEventListener('click', () => { macrosText.value = serializeMacros(MACROS); macrosModal.classList.add('show'); });
     macrosCancel.addEventListener('click', ()=> macrosModal.classList.remove('show'));
-    macrosReset.addEventListener('click', () => { MACROS = {...DEFAULT_MACROS}; try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){} macrosText.value = serializeMacros(MACROS); render(); });
+    macrosReset.addEventListener('click', () => {
+      MACROS = {...DEFAULT_MACROS};
+      try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){}
+      macrosText.value = serializeMacros(MACROS);
+      render();
+    });
 
     function focusMacroLine(line){
       if (!line || line < 1) return;
@@ -1823,10 +2736,33 @@
         MACROS = { ...MACROS, ...parsed };
         try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
         try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
-        render(); requestAnimationFrame(() => macrosModal.classList.remove('show'));
+        render();
+        requestAnimationFrame(() => macrosModal.classList.remove('show'));
       } catch (err) { console.error('Save handler error:', err); alert('Unexpected error while saving shortcuts. Check console for details.'); }
     });
+
+
+    roomJoinBtn.addEventListener('click', async () => {
+      if (Collab.isConnected()) {
+        Collab.leave();
+      } else {
+        await Collab.join(roomInput.value);
+      }
+    });
+    roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') roomJoinBtn.click(); });
+    Collab.updateStatus();
   </script>
+
+
+  <!-- ===================== Join warning pop-under ===================== -->
+  <div id="joinPop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="joinPopTitle" style="display:none">
+    <div class="welcome-content">
+      <h3 id="joinPopTitle">Joining an Existing Room</h3>
+      <p>Joining a collaborative room will replace your editor with the room&rsquo;s shared text.</p>
+      <label class="join-pop-option"><input id="joinPopDontShow" type="checkbox"> Don&rsquo;t show this again</label>
+      <button id="joinPopDismiss">Got it</button>
+    </div>
+  </div>
 
 
   <!-- ===================== Welcome pop-under ===================== -->
