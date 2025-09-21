@@ -275,6 +275,7 @@
     .join-pop-option input{ margin:0; }
     @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
     @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
+
   </style>
 </head>
 <body>
@@ -291,6 +292,7 @@
     <button id="macrosBtn" class="menu-button">⚡ Shortcuts</button>
     <span class="fill"></span>
     <div class="collab-controls" role="group" aria-label="Collaboration">
+    <button id="shareRoomBtn" style="display:none;">📋 Share Room</button>
       <input id="displayNameInput" type="text" placeholder="Your name" autocomplete="off" spellcheck="false" aria-label="Display name">
       <input id="roomNameInput" type="text" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room name">
       <button id="roomJoinBtn">Connect</button>
@@ -334,7 +336,6 @@
         </div>
       </div>
     </div>
-
 
     <div class="right-controls">
       <!-- Dark slider -->
@@ -1763,6 +1764,79 @@
         updateStatus,
         debug: debugApi,
         requestSync
+      };
+    })();
+
+    (function setupUrlRoomParser() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomFromUrl = urlParams.get('room');
+      const shareBtn = document.getElementById('shareRoomBtn');
+      
+      // Auto-join room from URL on load
+      if (roomFromUrl && roomFromUrl.trim()) {
+        window.addEventListener('load', () => {
+          setTimeout(() => {
+            if (!Collab.isConnected()) {
+              roomInput.value = roomFromUrl;
+              roomJoinBtn.click();
+            }
+          }, 500);
+        });
+      }
+      
+      // Show/hide share button based on connection
+      function updateShareButton() {
+        if (shareBtn) {
+          shareBtn.style.display = Collab.isConnected() ? 'inline-block' : 'none';
+        }
+      }
+      
+      // Share button click handler
+      if (shareBtn) {
+        shareBtn.addEventListener('click', () => {
+          const roomName = roomInput.value.trim();
+          if (!roomName) return;
+          
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', roomName);
+          const shareUrl = url.toString();
+          
+          // Try to use navigator.clipboard, fallback to prompt
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(shareUrl).then(() => {
+              const original = shareBtn.textContent;
+              shareBtn.textContent = '✓ Copied!';
+              setTimeout(() => {
+                shareBtn.textContent = original;
+              }, 2000);
+            }).catch(() => {
+              prompt('Copy this link to share the room:', shareUrl);
+            });
+          } else {
+            prompt('Copy this link to share the room:', shareUrl);
+          }
+        });
+      }
+      
+      // Hook into Collab status updates
+      const originalUpdateStatus = Collab.updateStatus;
+      Collab.updateStatus = function() {
+        originalUpdateStatus.call(this);
+        updateShareButton();
+      };
+      
+      // Update share button on connect/disconnect
+      const originalJoin = Collab.join;
+      Collab.join = async function(...args) {
+        const result = await originalJoin.call(this, ...args);
+        updateShareButton();
+        return result;
+      };
+      
+      const originalLeave = Collab.leave;
+      Collab.leave = function() {
+        originalLeave.call(this);
+        updateShareButton();
       };
     })();
 
