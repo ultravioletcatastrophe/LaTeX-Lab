@@ -276,6 +276,26 @@
     @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
     @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
 
+    /* Let remote-caret labels spill over the editor edge and sit above the gutter */
+    #leftPane { position: relative; }
+
+    #gutter {
+      position: relative;
+      z-index: 1;            /* lower layer */
+    }
+
+    #editorWrap {
+      position: relative;
+      z-index: 2;            /* higher than gutter */
+      overflow: visible;     /* was: hidden */
+    }
+
+    /* already present, but keep it explicit */
+    #remoteLayer {
+      overflow: visible;
+      pointer-events: none;
+    }
+
   </style>
 </head>
 <body>
@@ -1234,7 +1254,9 @@
             kind: 'request', 
             clock: ++localClock, 
             ts: Date.now(),
-            from: CLIENT_ID
+            from: CLIENT_ID,
+            cursor: getCurrentCursor(),
+            name: displayName.trim()
           });
         } catch(e) {
           console.error('[Collab] Failed to send sync request', e);
@@ -1253,6 +1275,9 @@
         
         // Handle sync request
         if (payload.kind === 'request') {
+          if (typeof payload.name === 'string') updatePeerName(source, payload.name);
+          if (payload.cursor) updateRemoteCursor(source, payload.cursor);
+
           // Only respond if we're the established host
           if (isRoomOwner && !pendingInitialSync) {
             console.log('[Collab] Host responding to sync request');
@@ -1510,6 +1535,7 @@
 
       function sendPayload(payload) {
         if (!payload || !sendState || applying) return;
+        if (applying && payload.kind !== 'cursor') return;
         try {
           payload.from = CLIENT_ID;
           payload.clock = ++localClock;
