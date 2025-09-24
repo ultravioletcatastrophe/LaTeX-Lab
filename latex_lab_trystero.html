@@ -518,6 +518,7 @@
     function getCurrentCursor(){ return { start: editor.selectionStart || 0, end: editor.selectionEnd || 0 }; }
     const remotePeers = new Map();
     const peerMeta = new Map();
+    const peerAliases = new Map();
     const CARET_STYLE_PROPS = [
       'direction','boxSizing','width','height','overflowX','overflowY',
       'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
@@ -526,6 +527,41 @@
       'textAlign','textTransform','textIndent','textDecoration','letterSpacing','wordSpacing','tabSize','MozTabSize'
     ];
     let caretMirror = null;
+
+    function resolvePeerKey(id){
+      if (!id) return id;
+      let current = id;
+      const seen = new Set();
+      while (peerAliases.has(current) && !seen.has(current)){
+        seen.add(current);
+        current = peerAliases.get(current);
+      }
+      return current;
+    }
+
+    function linkPeerAlias(alias, canonical){
+      if (!alias || !canonical || alias === canonical) return resolvePeerKey(canonical || alias);
+      const target = resolvePeerKey(canonical);
+      peerAliases.set(alias, target);
+
+      const aliasEntry = remotePeers.get(alias);
+      if (aliasEntry && !remotePeers.has(target)){
+        remotePeers.set(target, aliasEntry);
+      }
+      if (aliasEntry && alias !== target){
+        remotePeers.delete(alias);
+      }
+
+      const aliasMeta = peerMeta.get(alias);
+      if (aliasMeta && !peerMeta.has(target)){
+        peerMeta.set(target, aliasMeta);
+      }
+      if (aliasMeta && alias !== target){
+        peerMeta.delete(alias);
+      }
+
+      return target;
+    }
 
     const CURSOR_COLOR_FALLBACKS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#f472b6','#14b8a6'];
     function hashString(input=''){ let hash = 0; for (let i = 0; i < input.length; i++){ hash = ((hash << 5) - hash) + input.charCodeAt(i); hash |= 0; } return hash; }
@@ -560,18 +596,21 @@
     }
     function fallbackNameForPeer(peerId){ return peerId ? `Peer ${peerId.slice(0,4)}` : 'Peer'; }
     function ensurePeerMeta(peerId){
-      if (!peerId) return { color: '#888', name: '', display: 'Peer' };
-      let meta = peerMeta.get(peerId);
+      const key = resolvePeerKey(peerId);
+      if (!key) return { color: '#888', name: '', display: 'Peer' };
+      let meta = peerMeta.get(key);
       if (!meta){
-        meta = { color: colorForPeer(peerId), name: '', display: fallbackNameForPeer(peerId) };
-        peerMeta.set(peerId, meta);
+        meta = { color: colorForPeer(key), name: '', display: fallbackNameForPeer(key) };
+        peerMeta.set(key, meta);
       }
+      if (peerId && peerId !== key) peerAliases.set(peerId, key);
       return meta;
     }
     function ensureRemotePeerEntry(peerId){
-      if (!peerId) return null;
-      const meta = ensurePeerMeta(peerId);
-      let entry = remotePeers.get(peerId);
+      const key = resolvePeerKey(peerId);
+      if (!key) return null;
+      const meta = ensurePeerMeta(key);
+      let entry = remotePeers.get(key);
       if (!entry){
         const el = document.createElement('div');
         el.className = 'remote-caret';
@@ -583,7 +622,7 @@
         el.appendChild(bar);
         remoteLayer.appendChild(el);
         entry = { el, bar, label, cursor: null, color: meta.color, name: meta.display, hover: false };
-        remotePeers.set(peerId, entry);
+        remotePeers.set(key, entry);
       }
       entry.color = meta.color;
       entry.name = meta.display;
@@ -591,32 +630,49 @@
       entry.bar.style.backgroundColor = entry.color;
       entry.label.style.backgroundColor = withAlpha(entry.color, 0.9);
       entry.label.style.border = `1px solid ${withAlpha(entry.color, 0.6)}`;
+      if (peerId && peerId !== key) peerAliases.set(peerId, key);
       return entry;
     }
     function updatePeerName(peerId, rawName){
-      if (!peerId) return;
-      const meta = ensurePeerMeta(peerId);
+      const key = resolvePeerKey(peerId);
+      if (!key) return;
+      const meta = ensurePeerMeta(key);
       const normalized = (rawName || '').trim();
       meta.name = normalized;
-      meta.display = normalized || fallbackNameForPeer(peerId);
-      const entry = remotePeers.get(peerId);
+      meta.display = normalized || fallbackNameForPeer(key);
+      const entry = remotePeers.get(key);
       if (entry){
         entry.name = meta.display;
         entry.label.textContent = meta.display;
         entry.bar.style.backgroundColor = meta.color;
         entry.label.style.backgroundColor = withAlpha(meta.color, 0.9);
         entry.label.style.border = `1px solid ${withAlpha(meta.color, 0.6)}`;
-        positionRemoteCaret(peerId, entry);
+        positionRemoteCaret(key, entry);
       }
     }
     function removeRemotePeer(peerId){
-      const entry = remotePeers.get(peerId);
-      if (entry){ entry.el.remove(); remotePeers.delete(peerId); }
-      if (peerId) peerMeta.delete(peerId);
+      if (!peerId) return;
+      const key = resolvePeerKey(peerId);
+      if (!key) return;
+      const entry = remotePeers.get(key);
+      if (entry){ entry.el.remove(); remotePeers.delete(key); }
+      peerMeta.delete(key);
+      const aliasesToRemove = [];
+      peerAliases.forEach((target, alias) => {
+        if (alias === key || target === key) aliasesToRemove.push(alias);
+      });
+      for (const alias of aliasesToRemove){
+        peerAliases.delete(alias);
+        if (alias !== key){
+          remotePeers.delete(alias);
+          peerMeta.delete(alias);
+        }
+      }
     }
     function updateRemoteCursor(peerId, cursor){
-      if (!peerId) return;
-      const entry = ensureRemotePeerEntry(peerId);
+      const key = resolvePeerKey(peerId);
+      if (!key) return;
+      const entry = ensureRemotePeerEntry(key);
       if (!entry) return;
       if (!cursor || typeof cursor.start !== 'number' || typeof cursor.end !== 'number'){
         entry.cursor = null;
@@ -624,10 +680,11 @@
         return;
       }
       entry.cursor = { start: cursor.start, end: cursor.end };
-      positionRemoteCaret(peerId, entry);
+      positionRemoteCaret(key, entry);
     }
     function positionRemoteCaret(peerId, entry){
-      const target = entry || remotePeers.get(peerId);
+      const key = resolvePeerKey(peerId);
+      const target = entry || remotePeers.get(key);
       if (!target) return;
       if (!target.cursor){ target.el.style.display = 'none'; return; }
       const textLength = editor.value.length;
@@ -1189,6 +1246,7 @@
         syncRequestCount = 0;
         Array.from(remotePeers.keys()).forEach(removeRemotePeer);
         peerMeta.clear();
+        peerAliases.clear();
         resetBroadcastCache();
         if (joinPop) joinPop.style.display = 'none';
         setButton('disconnected');
@@ -1266,17 +1324,26 @@
       function handleState(payload = {}, peerId) {
         if (!payload) return;
         const source = peerId || payload.sender || 'remote';
-        const senderId = payload.from || source;
-        
+        const senderId = payload.from || null;
+
+        if (peerId && senderId && peerId !== senderId) {
+          linkPeerAlias(senderId, peerId);
+        }
+
+        const keyCandidate = peerId || senderId || source;
+        const targetKey = resolvePeerKey(keyCandidate);
+        const safeKey = targetKey || keyCandidate || source;
+
         // Ignore our own messages
-        if (senderId === CLIENT_ID) return;
-        
-        console.log('[Collab] Received', payload.kind, 'from', source.slice(0,6));
-        
+        if (senderId && senderId === CLIENT_ID) return;
+
+        const logLabelSource = senderId || source || 'remote';
+        console.log('[Collab] Received', payload.kind, 'from', logLabelSource.slice(0,6));
+
         // Handle sync request
         if (payload.kind === 'request') {
-          if (typeof payload.name === 'string') updatePeerName(source, payload.name);
-          if (payload.cursor) updateRemoteCursor(source, payload.cursor);
+          if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
+          if (payload.cursor) updateRemoteCursor(safeKey, payload.cursor);
 
           // Only respond if we're the established host
           if (isRoomOwner && !pendingInitialSync) {
@@ -1305,10 +1372,10 @@
         }
         
         // Clock tracking
-        const prev = remoteClocks.get(source) || 0;
+        const prev = remoteClocks.get(safeKey) || 0;
         if (typeof payload.clock === 'number') {
           if (payload.clock <= prev) return;
-          remoteClocks.set(source, payload.clock);
+          remoteClocks.set(safeKey, payload.clock);
           if (payload.clock > lastRemoteClock) lastRemoteClock = payload.clock;
         }
         
@@ -1316,7 +1383,7 @@
         if (payload.kind === 'full' && payload.owner === 1) {
           // Accept this as authoritative state
           if (!hasReceivedInitialSync || payload.host === hostId) {
-            console.log('[Collab] Accepting full state from host', (payload.host || source).slice(0,6));
+            console.log('[Collab] Accepting full state from host', (payload.host || safeKey).slice(0,6));
             notifyHostAssigned(payload.host);
             hasReceivedInitialSync = true;
             pendingInitialSync = false;
@@ -1324,9 +1391,12 @@
             
             applying = true;
             try {
-              applyRemoteState(payload, source);
+              applyRemoteState(payload, safeKey);
             } finally {
               applying = false;
+            }
+            if (!isRoomOwner) {
+              sendCursorState(true);
             }
           }
           return;
@@ -1334,8 +1404,8 @@
         
         // Handle cursor updates
         if (payload.kind === 'cursor') {
-          if (typeof payload.name === 'string') updatePeerName(source, payload.name);
-          if (payload.cursor) updateRemoteCursor(source, payload.cursor);
+          if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
+          if (payload.cursor) updateRemoteCursor(safeKey, payload.cursor);
           return;
         }
         
@@ -1344,7 +1414,7 @@
           if (hasReceivedInitialSync) {
             applying = true;
             try {
-              applyRemoteState(payload, source);
+              applyRemoteState(payload, safeKey);
             } finally {
               applying = false;
             }
@@ -1683,7 +1753,15 @@
         offLeave = room.onPeerLeave((peerId) => {
           console.log('[Collab] Peer left:', peerId.slice(0,6));
           peers.delete(peerId);
+          const canonical = resolvePeerKey(peerId);
+          const aliasKeys = [];
+          peerAliases.forEach((target, alias) => {
+            if (alias === canonical || target === canonical) aliasKeys.push(alias);
+          });
           removeRemotePeer(peerId);
+          remoteClocks.delete(peerId);
+          if (canonical) remoteClocks.delete(canonical);
+          aliasKeys.forEach(alias => remoteClocks.delete(alias));
           
           // Handle host leaving
           if (peerId === hostId) {
