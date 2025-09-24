@@ -854,6 +854,33 @@
       return { x: left, y: top, height: lineHeight };
     }
 
+    function shiftRemoteCarets(delta) {
+      if (!delta) return;
+      const { index = 0, remove = 0, insert = '' } = delta;
+      const insertLen = (typeof insert === 'string') ? insert.length : 0;
+      const diff = insertLen - remove;
+      if (diff === 0 && remove === 0) return;
+
+      remotePeers.forEach((entry, peerId) => {
+        if (!entry || !entry.cursor) return;
+        const adjust = (pos) => {
+          if (typeof pos !== 'number') return pos;
+          if (pos <= index) return pos;
+          if (pos <= index + remove) return index + insertLen;
+          return pos + diff;
+        };
+        const nextStart = adjust(entry.cursor.start);
+        const nextEnd = adjust(entry.cursor.end);
+        if (nextStart !== entry.cursor.start || nextEnd !== entry.cursor.end) {
+          entry.cursor = {
+            start: typeof nextStart === 'number' ? nextStart : entry.cursor.start,
+            end: typeof nextEnd === 'number' ? nextEnd : entry.cursor.end
+          };
+          positionRemoteCaret(peerId, entry);
+        }
+      });
+    }
+
     function renderPresenceList(){
       if (!presenceList) return;
 
@@ -1406,16 +1433,28 @@
         renderPresenceList();
       }
 
-      function replaceTextPreserveCaret(newText) {
+      function replaceTextPreserveCaret(newText, delta = null) {
         if (editor.value === newText) return false;
         const wasFocused = (document.activeElement === editor);
         const prevStart = editor.selectionStart;
         const prevEnd = editor.selectionEnd;
+
+        const adjust = (pos) => {
+          if (!delta || typeof pos !== 'number') return pos;
+          const { index = 0, remove = 0, insert = '' } = delta;
+          const insertLen = (typeof insert === 'string') ? insert.length : 0;
+          if (pos <= index) return pos;
+          if (pos <= index + remove) return index + insertLen;
+          return pos + insertLen - remove;
+        };
+
         editor.value = newText;
         if (wasFocused) {
           const len = newText.length;
-          editor.selectionStart = Math.min(prevStart, len);
-          editor.selectionEnd = Math.min(prevEnd, len);
+          const nextStart = Math.min(adjust(prevStart), len);
+          const nextEnd = Math.min(adjust(prevEnd), len);
+          editor.selectionStart = nextStart;
+          editor.selectionEnd = nextEnd;
         }
         try { localStorage.setItem(LS_CONTENT, newText); } catch(e) {}
         return true;
@@ -1645,7 +1684,7 @@
             if (typeof data.resultLength === 'number' && data.resultLength !== applied.length) {
               throw new Error('result length mismatch');
             }
-            if (replaceTextPreserveCaret(applied)) {
+            if (replaceTextPreserveCaret(applied, data.delta)) {
               needsRender = true;
               textChanged = true;
             }
@@ -1792,7 +1831,10 @@
       function sendDeltaState() {
         if (pendingInitialSync) return;
         const payload = buildDeltaPayload();
-        if (payload) sendPayload(payload);
+        if (payload) {
+          if (payload.delta) shiftRemoteCarets(payload.delta);
+          sendPayload(payload);
+        }
       }
 
       function sendCursorState(force = false) {
