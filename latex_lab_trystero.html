@@ -209,6 +209,16 @@
     /* Controls */
     .controls{ min-height:88px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:.5rem 1rem 1rem; gap:1rem; background:linear-gradient(to top, rgba(0,0,0,.01), transparent); }
     .left-controls,.right-controls{ display:flex; align-items:center; gap:1rem }
+    .center-controls{ flex:1; display:flex; justify-content:center; min-width:0; }
+    .presence-list{ display:flex; align-items:center; justify-content:center; gap:.65rem; flex-wrap:wrap; font-size:13px; color:var(--text); max-width:100%; }
+    .presence-item{ display:flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,.9); box-shadow:0 1px 2px rgba(0,0,0,.08); max-width:200px; transition:background .18s,border-color .18s; }
+    .presence-item.self{ font-weight:600; }
+    body.dark .presence-item{ background:rgba(34,34,34,.85); box-shadow:0 1px 2px rgba(0,0,0,.28); }
+    body.dark .presence-item.self{ background:rgba(52,52,52,.92); }
+    .presence-color{ width:10px; height:10px; border-radius:50%; box-shadow:0 0 0 2px rgba(0,0,0,.08); flex-shrink:0; }
+    .presence-main{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .presence-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:142px; }
+    .presence-tone{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; white-space:nowrap; }
 
 
     /* Mode slider (wide) */
@@ -357,6 +367,10 @@
       </div>
     </div>
 
+    <div class="center-controls">
+      <div id="presenceList" class="presence-list" aria-live="polite" aria-label="Participants"></div>
+    </div>
+
     <div class="right-controls">
       <!-- Dark slider -->
       <div class="dark-switch" title="Light / Dark">
@@ -476,6 +490,7 @@
 
 
     const measure  = document.getElementById('measure');
+    const presenceList = document.getElementById('presenceList');
 
 
     const snippetsMenu = document.getElementById('snippetsMenu');
@@ -563,20 +578,22 @@
       return target;
     }
 
-    const CURSOR_COLOR_FALLBACKS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#f472b6','#14b8a6'];
+    const COLOR_BUCKETS = [
+      { name: 'Red', range: [345, 360] },
+      { name: 'Red', range: [0, 15] },
+      { name: 'Orange', range: [15, 45] },
+      { name: 'Yellow', range: [45, 70] },
+      { name: 'Lime', range: [70, 100] },
+      { name: 'Green', range: [100, 150] },
+      { name: 'Teal', range: [150, 180] },
+      { name: 'Cyan', range: [180, 210] },
+      { name: 'Blue', range: [210, 240] },
+      { name: 'Indigo', range: [240, 270] },
+      { name: 'Purple', range: [270, 300] },
+      { name: 'Magenta', range: [300, 330] },
+      { name: 'Pink', range: [330, 345] }
+    ];
     function hashString(input=''){ let hash = 0; for (let i = 0; i < input.length; i++){ hash = ((hash << 5) - hash) + input.charCodeAt(i); hash |= 0; } return hash; }
-    function hslToHex(h, s, l){
-      const hue = ((h % 360) + 360) % 360;
-      const sat = Math.max(0, Math.min(100, s)) / 100;
-      const light = Math.max(0, Math.min(100, l)) / 100;
-      const a = sat * Math.min(light, 1 - light);
-      const f = (n) => {
-        const k = (n + hue / 30) % 12;
-        const color = light - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
-        return Math.round(255 * Math.max(0, Math.min(1, color))).toString(16).padStart(2, '0');
-      };
-      return `#${f(0)}${f(8)}${f(4)}`;
-    }
     function withAlpha(hex, alpha){
       if (!hex) return `rgba(0,0,0,${alpha})`;
       let normalized = hex.replace('#','');
@@ -588,21 +605,56 @@
       const b = num & 255;
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    function colorForPeer(peerId){
-      const hash = Math.abs(hashString(peerId || 'peer'));
-      const color = hslToHex(hash % 360, 78, 62);
-      if (color) return color;
-      return CURSOR_COLOR_FALLBACKS[hash % CURSOR_COLOR_FALLBACKS.length];
+    function hslToHex(h, s, l){
+      const sat = Math.max(0, Math.min(100, s)) / 100;
+      const light = Math.max(0, Math.min(100, l)) / 100;
+      const chroma = (1 - Math.abs(2 * light - 1)) * sat;
+      const hueSegment = (h % 360) / 60;
+      const x = chroma * (1 - Math.abs((hueSegment % 2) - 1));
+      let r = 0, g = 0, b = 0;
+      if (0 <= hueSegment && hueSegment < 1){ r = chroma; g = x; }
+      else if (1 <= hueSegment && hueSegment < 2){ r = x; g = chroma; }
+      else if (2 <= hueSegment && hueSegment < 3){ g = chroma; b = x; }
+      else if (3 <= hueSegment && hueSegment < 4){ g = x; b = chroma; }
+      else if (4 <= hueSegment && hueSegment < 5){ r = x; b = chroma; }
+      else if (5 <= hueSegment && hueSegment < 6){ r = chroma; b = x; }
+      const m = light - chroma / 2;
+      const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
+
+    function hueName(h){
+      const norm = ((h % 360) + 360) % 360;
+      for (const bucket of COLOR_BUCKETS){
+        const [start, end] = bucket.range;
+        if (start <= end){
+          if (norm >= start && norm < end) return bucket.name;
+        } else {
+          if (norm >= start || norm < end) return bucket.name;
+        }
+      }
+      return 'Hue';
+    }
+
+    function colorInfoForPeer(peerId){
+      const hash = Math.abs(hashString(peerId || 'peer'));
+      const hue = hash % 360;
+      return { hex: hslToHex(hue, 78, 62), name: hueName(hue) };
+    }
+    function colorForPeer(peerId){ return colorInfoForPeer(peerId).hex; }
+    function colorNameForPeer(peerId){ return colorInfoForPeer(peerId).name; }
     function fallbackNameForPeer(peerId){ return peerId ? `Peer ${peerId.slice(0,4)}` : 'Peer'; }
     function ensurePeerMeta(peerId){
       const key = resolvePeerKey(peerId);
-      if (!key) return { color: '#888', name: '', display: 'Peer' };
+      if (!key) return { color: '#888', colorName: 'Gray', name: '', display: 'Peer' };
       let meta = peerMeta.get(key);
       if (!meta){
-        meta = { color: colorForPeer(key), name: '', display: fallbackNameForPeer(key) };
+        meta = { color: '', colorName: '', name: '', display: fallbackNameForPeer(key) };
         peerMeta.set(key, meta);
       }
+      meta.color = colorForPeer(key);
+      meta.colorName = colorNameForPeer(key);
+      if (!meta.display) meta.display = fallbackNameForPeer(key);
       if (peerId && peerId !== key) peerAliases.set(peerId, key);
       return meta;
     }
@@ -649,6 +701,7 @@
         entry.label.style.border = `1px solid ${withAlpha(meta.color, 0.6)}`;
         positionRemoteCaret(key, entry);
       }
+      renderPresenceList();
     }
     function removeRemotePeer(peerId){
       if (!peerId) return;
@@ -668,6 +721,7 @@
           peerMeta.delete(alias);
         }
       }
+      renderPresenceList();
     }
     function updateRemoteCursor(peerId, cursor){
       const key = resolvePeerKey(peerId);
@@ -780,6 +834,84 @@
       mirror.textContent = '';
 
       return { x: left, y: top, height: lineHeight };
+    }
+
+    function renderPresenceList(){
+      if (!presenceList) return;
+
+      const isConnected = (typeof Collab !== 'undefined' && Collab.isConnected?.()) === true;
+
+      const remoteItems = [];
+      const seen = new Set();
+      peerMeta.forEach((meta, rawId) => {
+        const key = resolvePeerKey(rawId);
+        if (!key || key === CLIENT_ID || seen.has(key)) return;
+        seen.add(key);
+        const entry = meta || {};
+        const name = entry.display || fallbackNameForPeer(key);
+        const colorInfo = entry.color && entry.colorName ? { hex: entry.color, name: entry.colorName } : colorInfoForPeer(key);
+        remoteItems.push({ id: key, text: name, title: `${name} · ${colorInfo.name}`, color: colorInfo.hex, colorName: colorInfo.name });
+      });
+
+      const hasRemotes = remoteItems.length > 0;
+
+      if (!isConnected || !hasRemotes){
+        presenceList.textContent = '';
+        presenceList.style.display = 'none';
+        return;
+      }
+
+      presenceList.style.display = '';
+      const fragment = document.createDocumentFragment();
+      const trimmedSelf = (displayName || '').trim();
+      const baseSelfName = trimmedSelf || 'You';
+      const selfColorInfo = colorInfoForPeer(CLIENT_ID);
+      const selfEntry = {
+        id: CLIENT_ID,
+        text: `You · ${baseSelfName}`,
+        title: `${baseSelfName} · ${selfColorInfo.name}`,
+        color: selfColorInfo.hex,
+        colorName: selfColorInfo.name,
+        self: true
+      };
+
+      const ordered = remoteItems
+        .slice()
+        .sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+      ordered.unshift(selfEntry);
+
+      presenceList.textContent = '';
+
+      ordered.forEach(item => {
+        const pill = document.createElement('div');
+        pill.className = 'presence-item' + (item.self ? ' self' : '');
+        pill.title = item.title || `${item.text} · ${item.colorName}`;
+
+        const dot = document.createElement('span');
+        dot.className = 'presence-color';
+        dot.style.backgroundColor = item.color;
+        dot.setAttribute('aria-hidden', 'true');
+
+        const main = document.createElement('span');
+        main.className = 'presence-main';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'presence-name';
+        nameSpan.textContent = item.text;
+
+        const toneSpan = document.createElement('span');
+        toneSpan.className = 'presence-tone';
+        toneSpan.textContent = item.colorName || '';
+
+        main.appendChild(nameSpan);
+        if (toneSpan.textContent) main.appendChild(toneSpan);
+
+        pill.appendChild(dot);
+        pill.appendChild(main);
+        fragment.appendChild(pill);
+      });
+
+      presenceList.appendChild(fragment);
     }
 
     function clearRemoteCaretHover(){ remotePeers.forEach(entry => { if (entry.hover){ entry.hover = false; entry.el.classList.remove('show-label'); } }); }
@@ -1251,6 +1383,7 @@
         if (joinPop) joinPop.style.display = 'none';
         setButton('disconnected');
         updateStatus();
+        renderPresenceList();
       }
 
       function replaceTextPreserveCaret(newText) {
@@ -1322,15 +1455,15 @@
       }
 
       function handleState(payload = {}, peerId) {
-        if (!payload) return;
-        const source = peerId || payload.sender || 'remote';
-        const senderId = payload.from || null;
+      if (!payload) return;
+      const source = peerId || payload.sender || 'remote';
+      const senderId = payload.from || null;
 
-        if (peerId && senderId && peerId !== senderId) {
-          linkPeerAlias(senderId, peerId);
-        }
+      if (peerId && senderId && peerId !== senderId) {
+        linkPeerAlias(peerId, senderId);
+      }
 
-        const keyCandidate = peerId || senderId || source;
+      const keyCandidate = senderId || peerId || source;
         const targetKey = resolvePeerKey(keyCandidate);
         const safeKey = targetKey || keyCandidate || source;
 
@@ -1736,6 +1869,7 @@
           console.log('[Collab] Peer joined:', peerId.slice(0,6));
           peers.add(peerId);
           ensurePeerMeta(peerId);
+          renderPresenceList();
           updateStatus();
           attachPeerDebug(peerId);
           
@@ -1945,6 +2079,7 @@
     })();
 
     const notifyNameChange = () => {
+      renderPresenceList();
       Collab.updateStatus();
       if (Collab.isConnected() && !Collab.isApplying()){
         Collab.sendCursor(true);
@@ -3042,6 +3177,7 @@
       editor.placeholder    = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
       Guides.syncOverlayAndMirror();
       render();
+      renderPresenceList();
       // Ensure the very first rebuild happens before we restore scroll
       requestAnimationFrame(() => {
         // Optional: force a rebuild once after initial layout (handles font/width settles)
