@@ -1283,6 +1283,8 @@
           if (joinPop) joinPop.style.display = 'none';
           resetBroadcastCache();
         }
+
+        updateStatus();
       }
 
       const capability = {
@@ -1532,23 +1534,20 @@
         
         // Handle full state from host
         if (payload.kind === 'full' && payload.owner === 1) {
-          // Accept this as authoritative state
-          if (!hasReceivedInitialSync || payload.host === hostId) {
-            console.log('[Collab] Accepting full state from host', (payload.host || safeKey).slice(0,6));
-            notifyHostAssigned(payload.host);
-            hasReceivedInitialSync = true;
-            pendingInitialSync = false;
-            syncRequestCount = 0;
-            
-            applying = true;
-            try {
-              applyRemoteState(payload, safeKey);
-            } finally {
-              applying = false;
-            }
-            if (!isRoomOwner) {
-              sendCursorState(true);
-            }
+          console.log('[Collab] Accepting full state from host', (payload.host || safeKey).slice(0,6));
+          notifyHostAssigned(payload.host);
+          hasReceivedInitialSync = true;
+          pendingInitialSync = false;
+          syncRequestCount = 0;
+
+          applying = true;
+          try {
+            applyRemoteState(payload, safeKey);
+          } finally {
+            applying = false;
+          }
+          if (!isRoomOwner) {
+            sendCursorState(true);
           }
           return;
         }
@@ -1965,7 +1964,7 @@
             requestSync();
           }, 300);
         }
-        
+
         sendCursorState(true);
         
         try {
