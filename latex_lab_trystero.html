@@ -277,6 +277,7 @@
 
     /* Welcome pop-under styling */
     .welcome-pop{ position: fixed; bottom: 1rem; right: 1rem; max-width: 360px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 1rem; z-index: 99999; display: none; animation: fadeInUp .35s ease; }
+    #joinPop { top: 50%; left: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); max-width: min(420px, calc(100% - 2rem)); animation: fadeInScale .25s ease; }
     .welcome-pop h3 { margin: 0 0 .5rem; }
     .welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
     .welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
@@ -284,6 +285,7 @@
     .join-pop-option{ display:flex; align-items:center; gap:.4rem; font-size:12px; margin:0 0 .75rem; }
     .join-pop-option input{ margin:0; }
     @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes fadeInScale { from { opacity:0; transform: translate(-50%, -48%) scale(.97); } to { opacity:1; transform: translate(-50%, -50%) scale(1); } }
     @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
 
     /* Let remote-caret labels spill over the editor edge and sit above the gutter */
@@ -1005,15 +1007,49 @@
     const joinPop          = document.getElementById('joinPop');
     const joinPopDismiss   = document.getElementById('joinPopDismiss');
     const joinPopDontShow  = document.getElementById('joinPopDontShow');
+    let pendingJoinRoom    = null;
+
+    function shouldSuppressJoinWarning(){
+      try { return localStorage.getItem(LS_JOIN_WARNING) === '1'; }
+      catch(e){ return false; }
+    }
+
+    function showJoinWarning(){
+      if (!joinPop) return;
+      joinWarningDismissed = false;
+      if (joinPopDontShow) joinPopDontShow.checked = false;
+      joinPop.style.display = 'block';
+      joinPop.setAttribute('aria-modal', 'true');
+      joinPop.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(() => {
+        joinPop.classList.add('show');
+        joinPopDismiss?.focus();
+      });
+    }
+
+    function hideJoinWarning() {
+      if (!joinPop) return;
+      joinPop.classList.remove('show');
+      joinPop.style.display = 'none';
+      joinPop.setAttribute('aria-modal', 'false');
+      joinPop.setAttribute('aria-hidden', 'true');
+    }
 
     if (joinPopDismiss){
       joinPopDismiss.addEventListener('click', () => {
         if (joinPopDontShow && joinPopDontShow.checked){
           try { localStorage.setItem(LS_JOIN_WARNING, '1'); }
           catch(e){}
+          joinWarningDismissed = true;
+        } else {
+          joinWarningDismissed = false;
         }
-        joinWarningDismissed = true;
-        joinPop.style.display = 'none';
+        hideJoinWarning();
+        if (pendingJoinRoom) {
+          const target = pendingJoinRoom;
+          pendingJoinRoom = null;
+          Promise.resolve(Collab.join(target)).catch(err => console.error('Join failed:', err));
+        }
       });
     }
 
@@ -3283,7 +3319,11 @@
 
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (joinPop && joinPop.style.display === 'block'){ joinWarningDismissed = true; joinPop.style.display = 'none'; return; }
+      if (joinPop && joinPop.style.display === 'block'){
+        pendingJoinRoom = null;
+        hideJoinWarning();
+        return;
+      }
       if (matrixModal.classList.contains('show')) { matrixModal.classList.remove('show'); return; }
       if (tableModal .classList.contains('show')) { tableModal .classList.remove('show'); return; }
       if (macrosModal.classList.contains('show')) { macrosModal.classList.remove('show'); return; }
@@ -3348,9 +3388,32 @@
     roomJoinBtn.addEventListener('click', async () => {
       if (Collab.isConnected()) {
         Collab.leave();
-      } else {
-        await Collab.join(roomInput.value);
+        return;
       }
+
+      const target = (roomInput.value || '').trim();
+      const suppress = shouldSuppressJoinWarning();
+
+      if (suppress) {
+        try {
+          await Collab.join(target);
+        } catch (err) {
+          console.error('Join failed:', err);
+        }
+        return;
+      }
+
+      if (!target) {
+        try {
+          await Collab.join(target);
+        } catch (err) {
+          console.error('Join failed:', err);
+        }
+        return;
+      }
+
+      pendingJoinRoom = target;
+      showJoinWarning();
     });
     roomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') roomJoinBtn.click(); });
     Collab.updateStatus();
@@ -3360,8 +3423,8 @@
   <!-- ===================== Join warning pop-under ===================== -->
   <div id="joinPop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="joinPopTitle" style="display:none">
     <div class="welcome-content">
-      <h3 id="joinPopTitle">Joining an Existing Room</h3>
-      <p>Joining a collaborative room will replace your editor with the room&rsquo;s shared text.</p>
+      <h3 id="joinPopTitle">⚠️ Warning: Joining an Existing Room</h3>
+      <p>If the room you are trying to join is already populated, joining will replace your editor's contents with the room&rsquo;s shared text.</p>
       <label class="join-pop-option"><input id="joinPopDontShow" type="checkbox"> Don&rsquo;t show this again</label>
       <button id="joinPopDismiss">Got it</button>
     </div>
