@@ -1063,6 +1063,7 @@
     const displayNameInput = document.getElementById('displayNameInput');
     const joinPop          = document.getElementById('joinPop');
     const joinPopDismiss   = document.getElementById('joinPopDismiss');
+    const joinPopCancel    = document.getElementById('joinPopCancel');
     const joinPopDontShow  = document.getElementById('joinPopDontShow');
     let pendingJoinRoom    = null;
 
@@ -1106,6 +1107,16 @@
           const target = pendingJoinRoom;
           pendingJoinRoom = null;
           Promise.resolve(Collab.join(target)).catch(err => console.error('Join failed:', err));
+        }
+      });
+    }
+    if (joinPopCancel) {
+      joinPopCancel.addEventListener('click', () => {
+        pendingJoinRoom = null;
+        hideJoinWarning();
+        if (roomInput) {
+          roomInput.value = '';
+          roomInput.focus();
         }
       });
     }
@@ -3583,7 +3594,10 @@
       <h3 id="joinPopTitle">⚠️ Warning: Joining an Existing Room</h3>
       <p>If the room you are trying to join is already populated, joining will replace your editor's contents with the room&rsquo;s shared text.</p>
       <label class="join-pop-option"><input id="joinPopDontShow" type="checkbox"> Don&rsquo;t show this again</label>
-      <button id="joinPopDismiss">Got it</button>
+      <div class="join-pop-actions">
+        <button id="joinPopCancel">❌ Cancel</button>
+        <button id="joinPopDismiss">✅ Got it</button>
+      </div>
     </div>
   </div>
 
@@ -3598,7 +3612,7 @@
         or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
         Dark mode and custom shortcuts are supported too.
       </p>
-      <button id="welcomeClose">Got it</button>
+      <button id="welcomeClose">✅ Got it</button>
     </div>
   </div>
 </body>
