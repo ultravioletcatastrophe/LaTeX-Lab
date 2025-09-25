@@ -536,6 +536,7 @@
     const remotePeers = new Map();
     const peerMeta = new Map();
     const peerAliases = new Map();
+    const peerJoinTimes = new Map();
     const CARET_STYLE_PROPS = [
       'direction','boxSizing','width','height','overflowX','overflowY',
       'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
@@ -575,6 +576,14 @@
       }
       if (aliasMeta && alias !== target){
         peerMeta.delete(alias);
+      }
+
+      const aliasTime = peerJoinTimes.get(alias);
+      if (aliasTime !== undefined && !peerJoinTimes.has(target)){
+        peerJoinTimes.set(target, aliasTime);
+      }
+      if (alias !== target && aliasTime !== undefined){
+        peerJoinTimes.delete(alias);
       }
 
       return target;
@@ -1321,10 +1330,11 @@
       let lastBroadcastName = '';
 
       // Add these tracking variables
-      let roomCreatedAt = null;
+      let joinTimestamp = null;
       let hasReceivedInitialSync = false;
       let syncRequestCount = 0;
       const MAX_SYNC_REQUESTS = 3;
+      let fullSyncPending = false;
 
       function resetBroadcastCache() {
         lastBroadcastText = editor.value || '';
@@ -1399,6 +1409,119 @@
         setStatus(`Room ${roomName} · ${peerLabel}${hostLabel}`);
       }
 
+      function emitInternal(kind, extra = {}) {
+        if (!sendState) return;
+        try {
+          sendState({
+            kind,
+            clock: ++localClock,
+            ts: Date.now(),
+            from: CLIENT_ID,
+            ...extra
+          });
+        } catch (err) {
+          console.warn('[Collab] Failed to emit control message', kind, err);
+        }
+      }
+
+      function updatePeerJoinTime(peerId, timestamp) {
+        if (!peerId || typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return;
+        const normalized = Math.floor(timestamp);
+        const key = resolvePeerKey(peerId) || peerId;
+        const current = peerJoinTimes.get(key);
+        if (current === normalized) return;
+        peerJoinTimes.set(key, normalized);
+        if (key === CLIENT_ID) joinTimestamp = normalized;
+        evaluateHostElection('timestamp-update');
+      }
+
+      function clearPeerJoinTime(peerId) {
+        if (!peerId) return;
+        const key = resolvePeerKey(peerId) || peerId;
+        let removed = peerJoinTimes.delete(key);
+        if (peerId !== key && peerJoinTimes.delete(peerId)) removed = true;
+        if (removed) {
+          evaluateHostElection('timestamp-remove');
+        }
+      }
+
+      function broadcastJoinInfo(requestReply = false) {
+        if (typeof joinTimestamp !== 'number') return;
+        const payload = {
+          joinedAt: joinTimestamp,
+          name: displayName.trim()
+        };
+        if (requestReply) payload.requestReply = 1;
+        emitInternal('hello', payload);
+      }
+
+      function scheduleFullSync(reason) {
+        if (!room) return;
+        fullSyncPending = true;
+        maybeSendFullSync(reason);
+      }
+
+      function maybeSendFullSync(reason) {
+        if (!fullSyncPending || !isRoomOwner) return;
+        console.log('[Collab] Host broadcasting full state', `(${reason})`);
+        announceHost();
+        sendFullState();
+        fullSyncPending = false;
+      }
+
+      function evaluateHostElection(reason = 'update') {
+        if (!room) return;
+        if (!peers.size) {
+          if (hostId !== null) {
+            notifyHostAssigned(null);
+            fullSyncPending = false;
+          }
+          return;
+        }
+
+        const localTs = typeof joinTimestamp === 'number' ? joinTimestamp : null;
+        if (localTs === null) return;
+
+        const candidates = [{ id: CLIENT_ID, ts: localTs }];
+        for (const peerId of peers) {
+          const key = resolvePeerKey(peerId) || peerId;
+          const ts = peerJoinTimes.get(key);
+          if (typeof ts !== 'number') {
+            return; // wait until we know everyone's timestamp
+          }
+          candidates.push({ id: key, ts });
+        }
+
+        if (candidates.length < 2) {
+          if (hostId !== null) {
+            notifyHostAssigned(null);
+            fullSyncPending = false;
+          }
+          return;
+        }
+
+        candidates.sort((a, b) => {
+          if (a.ts !== b.ts) return a.ts - b.ts;
+          if (a.id === b.id) return 0;
+          return a.id < b.id ? -1 : 1;
+        });
+
+        const winner = candidates[0];
+        if (!winner || !winner.id) return;
+
+        if (hostId !== winner.id) {
+          console.log('[Collab] Host election pick', winner.id.slice(0, 6), `(${reason})`);
+          notifyHostAssigned(winner.id);
+          if (isRoomOwner) {
+            fullSyncPending = true;
+          }
+        }
+
+        if (isRoomOwner) {
+          maybeSendFullSync(reason);
+        }
+      }
+
       async function ensureTrystero() {
         if (joinRoomImpl) return joinRoomImpl;
         if (!loadPromise) {
@@ -1456,7 +1579,9 @@
         currentOwner = null;
         hostId = null;
         joinWarningDismissed = false;
-        roomCreatedAt = null;
+        joinTimestamp = null;
+        peerJoinTimes.clear();
+        fullSyncPending = false;
         hasReceivedInitialSync = false;
         syncRequestCount = 0;
         Array.from(remotePeers.keys()).forEach(removeRemotePeer);
@@ -1554,13 +1679,16 @@
       const source = peerId || payload.sender || 'remote';
       const senderId = payload.from || null;
 
+      let aliasTarget = null;
       if (peerId && senderId && peerId !== senderId) {
-        linkPeerAlias(peerId, senderId);
+        aliasTarget = linkPeerAlias(peerId, senderId);
       }
 
       const keyCandidate = senderId || peerId || source;
         const targetKey = resolvePeerKey(keyCandidate);
         const safeKey = targetKey || keyCandidate || source;
+
+        if (aliasTarget) evaluateHostElection('alias-link');
 
         // Ignore our own messages
         if (senderId && senderId === CLIENT_ID) return;
@@ -1581,21 +1709,24 @@
           sendCursorState(true);
           return;
         }
+
+        // Handle handshake / timestamp exchange
+        if (payload.kind === 'hello') {
+          if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
+          if (typeof payload.joinedAt === 'number') updatePeerJoinTime(senderId || safeKey, payload.joinedAt);
+          if (payload.requestReply && senderId) {
+            broadcastJoinInfo(false);
+          }
+          evaluateHostElection('hello');
+          return;
+        }
         
         // Handle host announcement
         if (payload.kind === 'host_announce') {
-          const announceTime = payload.created || payload.priority || 0;
-          const myTime = roomCreatedAt || 0;
-          
-          // Accept host if: we don't have one, or they joined earlier, or same time but their ID is lower
-          if (!hostId || 
-              announceTime < myTime || 
-              (announceTime === myTime && payload.host < CLIENT_ID)) {
-            console.log('[Collab] Accepting host announcement from', payload.host.slice(0,6));
-            notifyHostAssigned(payload.host);
-            hasReceivedInitialSync = false;
-            pendingInitialSync = true;
+          if (typeof payload.host === 'string' && typeof payload.joinedAt === 'number') {
+            updatePeerJoinTime(payload.host, payload.joinedAt);
           }
+          evaluateHostElection('announce');
           return;
         }
         
@@ -1610,10 +1741,14 @@
         // Handle full state from host
         if (payload.kind === 'full' && payload.owner === 1) {
           console.log('[Collab] Accepting full state from host', (payload.host || safeKey).slice(0,6));
+          if (typeof payload.host === 'string' && typeof payload.joinedAt === 'number') {
+            updatePeerJoinTime(payload.host, payload.joinedAt);
+          }
           notifyHostAssigned(payload.host);
           hasReceivedInitialSync = true;
           pendingInitialSync = false;
           syncRequestCount = 0;
+          evaluateHostElection('full');
 
           applying = true;
           try {
@@ -1636,6 +1771,9 @@
         
         // Only apply deltas after initial sync and from the host
         if (payload.kind === 'delta') {
+          if (typeof payload.host === 'string' && typeof payload.joinedAt === 'number') {
+            updatePeerJoinTime(payload.host, payload.joinedAt);
+          }
           if (hasReceivedInitialSync) {
             applying = true;
             try {
@@ -1657,17 +1795,11 @@
 
       function announceHost() {
         if (!sendState || !isRoomOwner) return;
-        const payload = {
-          kind: 'host_announce',
-          host: CLIENT_ID,
-          created: roomCreatedAt,
-          priority: roomCreatedAt,
-          clock: ++localClock,
-          ts: Date.now(),
-          from: CLIENT_ID
-        };
         console.log('[Collab] Announcing as host');
-        sendState(payload);
+        emitInternal('host_announce', {
+          host: CLIENT_ID,
+          joinedAt: joinTimestamp
+        });
       }
 
       function attachPeerDebug(peerId) {
@@ -1778,6 +1910,7 @@
           name: displayName.trim(),
           owner: isRoomOwner ? 1 : 0,
           host: isRoomOwner ? CLIENT_ID : (hostId || null),
+          joinedAt: joinTimestamp,
           from: CLIENT_ID
         };
       }
@@ -1789,6 +1922,9 @@
           owner: isRoomOwner ? 1 : 0,
           host: isRoomOwner ? CLIENT_ID : (hostId || null)
         };
+        if (isRoomOwner && typeof joinTimestamp === 'number') {
+          payload.joinedAt = joinTimestamp;
+        }
         let include = false;
 
         const deltaInfo = computeDelta(lastBroadcastText, current);
@@ -1901,12 +2037,15 @@
         try {
           const joinRoomFn = await ensureTrystero();
           room = await joinRoomFn(config, trimmed);
-          roomCreatedAt = Date.now();
+          joinTimestamp = Date.now();
+          peerJoinTimes.clear();
+          peerJoinTimes.set(CLIENT_ID, joinTimestamp);
+          fullSyncPending = false;
         } catch (err) {
           console.error('Unable to join room:', err);
           room = null;
           roomName = '';
-          roomCreatedAt = null;
+          joinTimestamp = null;
           const msg = err && err.message === 'Trystero import failed' 
             ? 'Trystero unavailable' 
             : 'Connection failed';
@@ -1919,7 +2058,7 @@
           console.error('Trystero joinRoom did not return a room object');
           room = null;
           roomName = '';
-          roomCreatedAt = null;
+          joinTimestamp = null;
           setStatus('Trystero unavailable');
           setButton('disconnected');
           return;
@@ -1935,30 +2074,28 @@
         });
         
         console.log('[Collab] Joined room with', existingIds.length, 'existing peers');
-        
-        // Determine initial host status
+
+        notifyHostAssigned(null);
         if (existingIds.length === 0) {
-          // We're the first in the room - we're the host
-          console.log('[Collab] First in room - becoming host');
-          notifyHostAssigned(CLIENT_ID);
+          console.log('[Collab] Waiting for peers to elect host');
           hasReceivedInitialSync = true;
           pendingInitialSync = false;
         } else {
-          // Others exist - we're joining, wait for sync
-          console.log('[Collab] Others in room - waiting for host');
-          hostId = null;
-          isRoomOwner = false;
+          console.log('[Collab] Room populated - awaiting host election');
           hasReceivedInitialSync = false;
           pendingInitialSync = true;
         }
-        
+
         updateStatus();
-        
+        evaluateHostElection('post-join');
+
         // Set up messaging
         const [send, onState] = room.makeAction('state');
         sendState = (payload) => send(payload);
         unsubscribeState = onState((payload, peerId) => handleState(payload, peerId));
-        
+        broadcastJoinInfo(true);
+        setTimeout(() => broadcastJoinInfo(true), 250);
+
         // Set up peer join/leave handlers
         offJoin = room.onPeerJoin((peerId) => {
           console.log('[Collab] Peer joined:', peerId.slice(0,6));
@@ -1967,16 +2104,9 @@
           renderPresenceList();
           updateStatus();
           attachPeerDebug(peerId);
-          
-          // If we're the host, send state to new peer
-          if (isRoomOwner) {
-            // Small delay to ensure new peer is ready
-            setTimeout(() => {
-              console.log('[Collab] Sending state to new peer');
-              announceHost();
-              sendFullState();
-            }, 100);
-          }
+          evaluateHostElection('peer-join-event');
+          scheduleFullSync('peer-join');
+          setTimeout(() => broadcastJoinInfo(true), 100);
         });
         
         offLeave = room.onPeerLeave((peerId) => {
@@ -1987,39 +2117,19 @@
           peerAliases.forEach((target, alias) => {
             if (alias === canonical || target === canonical) aliasKeys.push(alias);
           });
+          clearPeerJoinTime(peerId);
           removeRemotePeer(peerId);
           remoteClocks.delete(peerId);
           if (canonical) remoteClocks.delete(canonical);
           aliasKeys.forEach(alias => remoteClocks.delete(alias));
-          
-          // Handle host leaving
-          if (peerId === hostId) {
-            console.log('[Collab] Host left - determining new host');
-            const survivors = [...peers, CLIENT_ID].filter(Boolean).sort();
-            const nextHost = survivors[0] || CLIENT_ID;
-            
-            if (nextHost === CLIENT_ID) {
-              // We're the new host
-              console.log('[Collab] Becoming new host');
-              notifyHostAssigned(CLIENT_ID);
-              hasReceivedInitialSync = true;
-              pendingInitialSync = false;
-              // Announce to remaining peers
-              setTimeout(() => {
-                announceHost();
-                sendFullState();
-              }, 100);
-            } else {
-              // Someone else should be host
-              console.log('[Collab] Waiting for new host', nextHost.slice(0,6));
-              hostId = null;
-              isRoomOwner = false;
-              pendingInitialSync = true;
-              hasReceivedInitialSync = false;
-              syncRequestCount = 0;
-            }
+          if (!peers.size) {
+            notifyHostAssigned(null);
+            fullSyncPending = false;
+            hasReceivedInitialSync = true;
+            pendingInitialSync = false;
+          } else {
+            evaluateHostElection('peer-leave-event');
           }
-          
           updateStatus();
         });
         
@@ -2027,16 +2137,8 @@
         updateStatus();
         resetBroadcastCache();
         
-        // Initial actions based on role
-        if (isRoomOwner) {
-          // We're the first - announce as host
-          setTimeout(() => {
-            console.log('[Collab] Initial host announcement');
-            announceHost();
-            sendFullState();
-          }, 100);
-        } else {
-          // We're joining existing room - request sync after a moment
+        // If others are present, request sync after a short delay
+        if (peers.size) {
           setTimeout(() => {
             console.log('[Collab] Initial sync request');
             requestSync();
@@ -2073,7 +2175,7 @@
           isRoomOwner,
           hasReceivedInitialSync,
           pendingInitialSync,
-          roomCreatedAt,
+          joinTimestamp,
           peers: [...peers]
         })
       };
