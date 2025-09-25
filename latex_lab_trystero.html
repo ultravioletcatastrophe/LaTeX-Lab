@@ -508,6 +508,18 @@
     remoteLayer.id = 'remoteLayer';
     editorWrap.appendChild(remoteLayer);
 
+    const selfCaretEl = document.createElement('div');
+    selfCaretEl.className = 'remote-caret self-caret';
+    const selfCaretLabel = document.createElement('div');
+    selfCaretLabel.className = 'remote-caret-label';
+    const selfCaretBar = document.createElement('div');
+    selfCaretBar.className = 'remote-caret-bar';
+    selfCaretEl.appendChild(selfCaretLabel);
+    selfCaretEl.appendChild(selfCaretBar);
+    remoteLayer.appendChild(selfCaretEl);
+    selfCaretEl.style.display = 'none';
+    const selfCaretEntry = { el: selfCaretEl, bar: selfCaretBar, label: selfCaretLabel, cursor: null, color: '', name: '', hover: false };
+
     const CLIENT_ID = (() => {
       try {
         const key = 'latexlab.clientId';
@@ -673,6 +685,37 @@
     function colorForPeer(peerId){ return colorInfoForPeer(peerId).hex; }
     function colorNameForPeer(peerId){ return colorInfoForPeer(peerId).name; }
     function fallbackNameForPeer(peerId){ return peerId ? `Peer ${peerId.slice(0,4)}` : 'Peer'; }
+    function updateSelfCaretAppearance(info = null){
+      const palette = info || colorInfoForPeer(CLIENT_ID);
+      const color = palette?.hex || colorForPeer(CLIENT_ID);
+      const label = (displayName || '').trim() || 'You';
+      selfCaretEntry.color = color;
+      selfCaretEntry.name = label;
+      selfCaretEntry.bar.style.backgroundColor = color;
+      selfCaretEntry.label.style.backgroundColor = withAlpha(color, 0.9);
+      selfCaretEntry.label.style.border = `1px solid ${withAlpha(color, 0.6)}`;
+      selfCaretEntry.label.textContent = label;
+      if (editor) {
+        editor.style.caretColor = 'transparent';
+      }
+    }
+    function hideSelfCaret(){
+      if (!selfCaretEntry) return;
+      selfCaretEntry.el.style.display = 'none';
+      selfCaretEntry.cursor = null;
+    }
+    function updateSelfCaretCursor(){
+      if (!selfCaretEntry || !editor) return;
+      if (document.activeElement !== editor) {
+        hideSelfCaret();
+        return;
+      }
+      updateSelfCaretAppearance();
+      const cursor = getCurrentCursor();
+      const caretPos = typeof cursor.end === 'number' ? cursor.end : cursor.start || 0;
+      selfCaretEntry.cursor = { start: caretPos, end: caretPos };
+      positionRemoteCaret(CLIENT_ID, selfCaretEntry);
+    }
     function ensurePeerMeta(peerId){
       const key = resolvePeerKey(peerId);
       if (!key) return { color: '#888', colorName: 'Gray', name: '', display: 'Peer' };
@@ -803,7 +846,10 @@
       target.el.classList.toggle('label-below', showBelow);
       target.el.classList.toggle('show-label', !!target.hover);
     }
-    function updateAllRemoteCarets(){ remotePeers.forEach((entry, peerId) => positionRemoteCaret(peerId, entry)); }
+    function updateAllRemoteCarets(){
+      remotePeers.forEach((entry, peerId) => positionRemoteCaret(peerId, entry));
+      updateSelfCaretCursor();
+    }
     function ensureCaretMirror(){
       if (caretMirror) return caretMirror;
       const mirror = document.createElement('div');
@@ -896,6 +942,8 @@
       if (!presenceList) return;
 
       const isConnected = (typeof Collab !== 'undefined' && Collab.isConnected?.()) === true;
+
+      updateSelfCaretAppearance();
 
       const remoteItems = [];
       const seen = new Set();
@@ -2289,6 +2337,7 @@
       notifyNameChange();
     });
     const broadcastCursorPosition = () => {
+      updateSelfCaretCursor();
       if (Collab.isConnected() && !Collab.isApplying()){
         Collab.sendCursor();
       }
@@ -2298,6 +2347,9 @@
     editor.addEventListener('mouseup', broadcastCursorPosition);
     editor.addEventListener('focus', () => {
       broadcastCursorPosition();
+    });
+    editor.addEventListener('blur', () => {
+      hideSelfCaret();
     });
     /* =====================
        Render pipeline
@@ -2376,6 +2428,9 @@
     /* =====================
        Tab indent/outdent
        ===================== */
+    editor.addEventListener('keydown', () => {
+      requestAnimationFrame(updateSelfCaretCursor);
+    });
     editor.addEventListener('keydown', (e) => {
       if (e.key !== 'Tab') return;
       e.preventDefault();
