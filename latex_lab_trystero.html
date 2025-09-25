@@ -692,8 +692,8 @@
       selfCaretEntry.color = color;
       selfCaretEntry.name = label;
       selfCaretEntry.bar.style.backgroundColor = color;
-      selfCaretEntry.label.style.backgroundColor = withAlpha(color, 0.9);
-      selfCaretEntry.label.style.border = `1px solid ${withAlpha(color, 0.6)}`;
+      selfCaretEntry.label.style.backgroundColor = withAlpha(color, 1);
+      selfCaretEntry.label.style.border = `1px solid ${withAlpha(color, 1)}`;
       selfCaretEntry.label.textContent = label;
       if (editor) {
         editor.style.caretColor = 'transparent';
@@ -752,8 +752,8 @@
       entry.name = meta.display;
       entry.label.textContent = entry.name;
       entry.bar.style.backgroundColor = entry.color;
-      entry.label.style.backgroundColor = withAlpha(entry.color, 0.9);
-      entry.label.style.border = `1px solid ${withAlpha(entry.color, 0.6)}`;
+      entry.label.style.backgroundColor = withAlpha(entry.color, 1);
+      entry.label.style.border = `1px solid ${withAlpha(entry.color, 1)}`;
       if (peerId && peerId !== key) peerAliases.set(peerId, key);
       return entry;
     }
@@ -769,8 +769,8 @@
         entry.name = meta.display;
         entry.label.textContent = meta.display;
         entry.bar.style.backgroundColor = meta.color;
-        entry.label.style.backgroundColor = withAlpha(meta.color, 0.9);
-        entry.label.style.border = `1px solid ${withAlpha(meta.color, 0.6)}`;
+        entry.label.style.backgroundColor = withAlpha(meta.color, 1);
+        entry.label.style.border = `1px solid ${withAlpha(meta.color, 1)}`;
         positionRemoteCaret(key, entry);
       }
       renderPresenceList();
@@ -840,8 +840,8 @@
       target.bar.style.width = '2px';
       target.bar.style.height = `${barHeight}px`;
       target.bar.style.backgroundColor = target.color;
-      target.label.style.backgroundColor = withAlpha(target.color, 0.9);
-      target.label.style.border = `1px solid ${withAlpha(target.color, 0.6)}`;
+      target.label.style.backgroundColor = withAlpha(target.color, 1);
+      target.label.style.border = `1px solid ${withAlpha(target.color, 1)}`;
       target.label.textContent = target.name;
       target.el.classList.toggle('label-below', showBelow);
       target.el.classList.toggle('show-label', !!target.hover);
