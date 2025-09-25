@@ -884,7 +884,10 @@
       const bt = parseFloat(style.borderTopWidth)  || 0;
       const bl = parseFloat(style.borderLeftWidth) || 0;
 
-      mirror.style.width = (textarea.clientWidth - pl - pr) + 'px';
+      const boxSizing = (style.boxSizing || '').toLowerCase();
+      const baseWidth = textarea.clientWidth;
+      const contentWidth = boxSizing === 'border-box' ? baseWidth : baseWidth - pl - pr;
+      mirror.style.width = Math.max(0, contentWidth) + 'px';
       mirror.style.whiteSpace = 'pre-wrap';
       mirror.style.wordBreak  = 'break-word';
       mirror.style.wordWrap   = 'break-word';
