@@ -565,10 +565,20 @@
       }
       resetSelfColorPickerPosition();
       if (selfPresencePill) selfPresencePill.setAttribute('aria-expanded', 'false');
+      requestAnimationFrame(() => {
+        try { editor.focus({ preventScroll: true }); }
+        catch(e) { try { editor.focus(); } catch(_) {} }
+        updateSelfCaretCursor();
+      });
     });
     selfColorPicker.addEventListener('blur', () => {
       resetSelfColorPickerPosition();
       if (selfPresencePill) selfPresencePill.setAttribute('aria-expanded', 'false');
+      requestAnimationFrame(() => {
+        try { editor.focus({ preventScroll: true }); }
+        catch(e) { try { editor.focus(); } catch(_) {} }
+        updateSelfCaretCursor();
+      });
     });
     window.addEventListener('resize', resetSelfColorPickerPosition, { passive: true });
     window.addEventListener('scroll', resetSelfColorPickerPosition, { passive: true });
@@ -2741,6 +2751,11 @@
       document.body.classList.toggle('dark', isDark);
       try { localStorage.setItem(LS_DARK, isDark ? '1' : '0'); } catch(e) {}
       render();
+      requestAnimationFrame(() => {
+        try { editor.focus({ preventScroll: true }); }
+        catch(e) { try { editor.focus(); } catch(_) {} }
+        updateSelfCaretCursor();
+      });
     });
 
 
