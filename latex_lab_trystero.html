@@ -18,7 +18,7 @@
   <!-- Color Scripts -->
   <script src="./tinycolor-min.js"></script>
   <script src="./nearestColor.js"></script>
-  <script type="application/json" src="./xkcd.json"></script>
+  <script type="application/json" src="./ntc.json"></script>
 
 
   <!-- NOTE: We removed the external Computer Modern CSS to avoid conflicting font-family names. -->
@@ -754,9 +754,9 @@
 
     function loadNamedColorPalette(){
       try {
-        fetch('./xkcd.json')
+        fetch('./ntc.json')
           .then(response => {
-            if (!response.ok) throw new Error(`Failed to load xkcd colors (${response.status})`);
+            if (!response.ok) throw new Error(`Failed to load colors (${response.status})`);
             return response.json();
           })
           .then(payload => {
