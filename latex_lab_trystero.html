@@ -15,6 +15,11 @@
   <!-- KaTeX auto-render helper (pinned version) -->
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" defer></script>
 
+  <!-- Color Scripts -->
+  <script src="./tinycolor-min.js"></script>
+  <script src="./nearestColor.js"></script>
+  <script type="application/json" src="./xkcd.json"></script>
+
 
   <!-- NOTE: We removed the external Computer Modern CSS to avoid conflicting font-family names. -->
 
@@ -650,39 +655,6 @@
       return target;
     }
 
-    const COLOR_BUCKETS = [
-      { name: 'Red',        range: [354, 360] },
-      { name: 'Red',        range: [0, 6] },
-      { name: 'Vermilion',  range: [6, 18] },
-      { name: 'Orange',     range: [18, 30] },
-      { name: 'Amber',      range: [30, 42] },
-      { name: 'Gold',       range: [42, 54] },
-      { name: 'Yellow',     range: [54, 66] },
-      { name: 'Lemon',      range: [66, 78] },
-      { name: 'Chartreuse', range: [78, 90] },
-      { name: 'Lime',       range: [90, 102] },
-      { name: 'Spring',     range: [102, 114] },
-      { name: 'Green',      range: [114, 126] },
-      { name: 'Jade',       range: [126, 138] },
-      { name: 'Sea',        range: [138, 150] },
-      { name: 'Teal',       range: [150, 162] },
-      { name: 'Aqua',       range: [162, 174] },
-      { name: 'Cyan',       range: [174, 186] },
-      { name: 'Cerulean',   range: [186, 198] },
-      { name: 'Azure',      range: [198, 210] },
-      { name: 'Blue',       range: [210, 222] },
-      { name: 'Sapphire',   range: [222, 234] },
-      { name: 'Indigo',     range: [234, 246] },
-      { name: 'Violet',     range: [246, 258] },
-      { name: 'Purple',     range: [258, 270] },
-      { name: 'Orchid',     range: [270, 282] },
-      { name: 'Magenta',    range: [282, 294] },
-      { name: 'Fuchsia',    range: [294, 306] },
-      { name: 'Pink',       range: [306, 318] },
-      { name: 'Rose',       range: [318, 330] },
-      { name: 'Crimson',    range: [330, 342] },
-      { name: 'Scarlet',    range: [342, 354] }
-    ];
     function hashString(input=''){ let hash = 0; for (let i = 0; i < input.length; i++){ hash = ((hash << 5) - hash) + input.charCodeAt(i); hash |= 0; } return hash; }
     function withAlpha(hex, alpha){
       if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -722,30 +694,49 @@
       const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
+    const namedColorByHex = new Map();
+    let nearestColorMatcher = null;
 
-    function hueName(h){
-      const norm = ((h % 360) + 360) % 360;
-      for (const bucket of COLOR_BUCKETS){
-        const [start, end] = bucket.range;
-        if (start <= end){
-          if (norm >= start && norm < end) return bucket.name;
-        } else {
-          if (norm >= start || norm < end) return bucket.name;
+    function registerNamedColor(name, hex){
+      const normalized = normalizeHex(hex);
+      if (!normalized || typeof name !== 'string') return null;
+      const trimmed = name.trim();
+      if (!trimmed) return normalized;
+      if (!namedColorByHex.has(normalized)) namedColorByHex.set(normalized, trimmed);
+      return normalized;
+    }
+
+    function nameForHex(hex){
+      const normalized = normalizeHex(hex);
+      if (!normalized) return 'Color';
+      const direct = namedColorByHex.get(normalized);
+      if (direct) return direct;
+      if (nearestColorMatcher) {
+        try {
+          const match = nearestColorMatcher(normalized);
+          if (match && typeof match.name === 'string' && match.name) return match.name;
+          if (match && match.value) {
+            const fallback = namedColorByHex.get(normalizeHex(match.value));
+            if (fallback) return fallback;
+          }
+        } catch(err) {
+          console.warn('nearestColor lookup failed', err);
         }
       }
-      return 'Hue';
+      return normalized;
     }
 
     function baseColorInfoForPeer(peerId){
       const key = peerId || 'peer';
       const hash = Math.abs(hashString(key));
       const hue = hash % 360;
-      return { hex: hslToHex(hue, 78, 62), name: hueName(hue) };
+      const hex = hslToHex(hue, 78, 62);
+      return { hex, name: nameForHex(hex) };
     }
     function colorInfoForPeer(peerId){
       const key = resolvePeerKey(peerId) || peerId || CLIENT_ID;
       const override = colorOverrides.get(key);
-      if (override) return { hex: override, name: 'Custom' };
+      if (override) return { hex: override, name: nameForHex(override) };
       return baseColorInfoForPeer(key);
     }
     function colorForPeer(peerId){ return colorInfoForPeer(peerId).hex; }
@@ -760,6 +751,44 @@
       const info = baseColorInfoForPeer(key);
       return normalizeHex(info.hex) || info.hex;
     }
+
+    function loadNamedColorPalette(){
+      try {
+        fetch('./xkcd.json')
+          .then(response => {
+            if (!response.ok) throw new Error(`Failed to load xkcd colors (${response.status})`);
+            return response.json();
+          })
+          .then(payload => {
+            const palette = Object.create(null);
+            if (payload && Array.isArray(payload.colors)) {
+              payload.colors.forEach(entry => {
+                const normalized = registerNamedColor(entry?.name, entry?.hex);
+                if (normalized && entry?.name) {
+                  palette[entry.name] = normalized;
+                }
+              });
+            }
+            if (Object.keys(palette).length && typeof nearestColor === 'function') {
+              nearestColorMatcher = nearestColor.from(palette);
+              peerMeta.forEach((meta, key) => {
+                if (!meta) return;
+                const info = colorInfoForPeer(key);
+                meta.color = info.hex;
+                meta.colorName = info.name;
+              });
+              updateSelfCaretAppearance();
+              renderPresenceList();
+              updateAllRemoteCarets();
+            }
+          })
+          .catch(err => console.error('Color palette load failed:', err));
+      } catch(err) {
+        console.error('Color palette setup error:', err);
+      }
+    }
+
+    loadNamedColorPalette();
     function saveColorOverrides(){
       try {
         const data = {};
