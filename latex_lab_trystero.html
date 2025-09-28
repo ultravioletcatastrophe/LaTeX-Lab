@@ -283,19 +283,21 @@
 
 
     /* Welcome pop-under styling */
-    .welcome-pop{ position: fixed; bottom: 1rem; right: 1rem; max-width: 360px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 1rem; z-index: 99999; display: none; animation: fadeInUp .35s ease; }
-    #joinPop { top: 50%; left: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); max-width: min(420px, calc(100% - 2rem)); animation: fadeInScale .25s ease; }
+    .welcome-pop{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: min(480px, calc(100% - 2rem)); background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 38px rgba(0,0,0,.24); padding: 1.1rem 1.3rem; z-index: 99999; display: none; animation: fadeInScale .25s ease; }
+    #joinPop { max-width: min(420px, calc(100% - 2rem)); }
     .welcome-pop h3 { margin: 0 0 .5rem; }
     .welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
+    .welcome-pop ul{ margin:0 0 .9rem; padding-left:1.1rem; font-size:13px; line-height:1.5; }
+    .welcome-pop li{ margin-bottom:.45rem; }
     .welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
     body.dark .welcome-pop { background: #1e1e1e; }
+    .welcome-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99998; display:none; }
     .join-pop-option{ display:flex; align-items:center; gap:.4rem; font-size:12px; margin:0 0 .75rem; }
     .join-pop-option input{ margin:0; }
     .join-pop-actions{ display:flex; gap:.5rem; justify-content:flex-end; }
     .join-pop-actions button{ flex:1 1 auto; }
-    @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
     @keyframes fadeInScale { from { opacity:0; transform: translate(-50%, -48%) scale(.97); } to { opacity:1; transform: translate(-50%, -50%) scale(1); } }
-    @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
+    @media (max-width: 520px) { .welcome-pop { width: calc(100% - 2rem); } }
 
     /* Let remote-caret labels spill over the editor edge and sit above the gutter */
     #leftPane { position: relative; }
@@ -3604,6 +3606,10 @@
        ===================== */
     (function setupWelcomePop() {
       const LS_WELCOME='latexlab.welcome.v1';
+      const pop=document.getElementById('welcomePop');
+      const closeBtn=document.getElementById('welcomeClose');
+      const backdrop=document.getElementById('welcomeBackdrop');
+      let editorWasDisabled=false;
       function getQueryParam(name){ return new URLSearchParams(window.location.search).get(name); }
       function hashHasWelcome(){ return /(^|[#&])welcome(=1|$)/i.test(location.hash); }
       function shouldForceShow(){ const q=(getQueryParam('welcome')||'').toLowerCase(); if (q==='1'||q==='true'||q==='show') return true; if (hashHasWelcome()) return true; return false; }
@@ -3611,10 +3617,39 @@
       function safeGetItem(k){ try { return localStorage.getItem(k); } catch(e) { return null; } }
       function safeSetItem(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
       function safeRemoveItem(k){ try { localStorage.removeItem(k); } catch(e){} }
-      function showWelcome(){ const el=document.getElementById('welcomePop'); const btn=document.getElementById('welcomeClose'); if(!el||!btn) return; el.style.display='block'; setTimeout(()=>{ try { btn.focus(); } catch(e){} },0); btn.addEventListener('click', () => { el.style.display='none'; safeSetItem(LS_WELCOME,'1'); }, { once:true }); }
+      function lockWorkspace(locking){
+        if (locking){
+          if (backdrop){ backdrop.hidden=false; backdrop.style.display='block'; }
+          if (pop){ pop.setAttribute('aria-modal','true'); }
+          if (editor){
+            editorWasDisabled = editor.disabled;
+            editor.blur();
+            editor.disabled = true;
+          }
+        } else {
+          if (backdrop){ backdrop.style.display='none'; backdrop.hidden=true; }
+          if (pop){ pop.setAttribute('aria-modal','false'); }
+          if (editor){
+            if (!editorWasDisabled) editor.disabled = false;
+            editorWasDisabled = false;
+            requestAnimationFrame(() => {
+              try { editor.focus({ preventScroll: true }); }
+              catch(e) { try { editor.focus(); } catch(_){} }
+              updateSelfCaretCursor();
+            });
+          }
+        }
+      }
+      function dismissWelcome(setFlag){
+        if (!pop) return;
+        pop.style.display='none';
+        lockWorkspace(false);
+        if (setFlag) safeSetItem(LS_WELCOME,'1');
+      }
+      function showWelcome(){ if(!pop||!closeBtn) return; lockWorkspace(true); pop.style.display='block'; setTimeout(()=>{ try { closeBtn.focus(); } catch(e){} },0); closeBtn.addEventListener('click', () => dismissWelcome(true), { once:true }); }
       function init(){ if(shouldResetFlag()) safeRemoveItem(LS_WELCOME); const forced=shouldForceShow(); const seen=!!safeGetItem(LS_WELCOME); if (forced || !seen) { showWelcome(); if(forced) return; } }
       if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init, { once:true }); } else { init(); }
-      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const el=document.getElementById('welcomePop'); if (el && el.style.display==='block') { el.style.display='none'; try { localStorage.setItem(LS_WELCOME,'1'); } catch(e){} } } });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (pop && pop.style.display==='block') { dismissWelcome(true); } } });
     })();
 
 
@@ -3925,17 +3960,18 @@
   </div>
 
 
-  <!-- ===================== Welcome pop-under ===================== -->
+  <!-- ===================== Welcome modal ===================== -->
+  <div id="welcomeBackdrop" class="welcome-backdrop" hidden></div>
   <div id="welcomePop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="welcomeTitle">
     <div class="welcome-content">
-      <h3 id="welcomeTitle">👋 Welcome to LaTeX Lab</h3>
-      <p>
-        This is an in-browser LaTeX playground with live KaTeX rendering.
-        Type plain text and math, switch between <b>Mixed</b> mode (text + $inline$ / $$display$$ math)
-        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
-        Dark mode and custom shortcuts are supported too.
-      </p>
-      <button id="welcomeClose">✅ Got it</button>
+      <h3 id="welcomeTitle">👋 Welcome to LaTeX Lab Multiplayer</h3>
+      <p>This is an in-browser multiplayer LaTeX playground with live KaTeX rendering.</p>
+      <ul>
+        <li><strong>Join or create rooms:</strong> pop a room name in the toolbar and anyone using it appears instantly.</li>
+        <li><strong>Live updates:</strong> edits sync peer‑to‑peer using the Trystero protocol.</li>
+        <li><strong>Mixed/Classic Modes</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math.</li>
+      </ul>
+      <button id="welcomeClose">Let’s collaborate</button>
     </div>
   </div>
 </body>
