@@ -540,21 +540,28 @@
       position: 'fixed',
       left: '-9999px',
       top: '-9999px',
-      width: '1px',
-      height: '1px',
+      width: '24px',
+      height: '24px',
+      display: 'block',
+      backgroundColor: 'transparent',
       opacity: '0',
       border: '0',
       padding: '0',
-      margin: '0'
+      margin: '0',
+      pointerEvents: 'none',
+      zIndex: '99999',
+      transform: 'translate(-50%, -50%)'
     });
     selfColorPicker.tabIndex = -1;
 
     function moveSelfColorPicker(rect){
       if (!rect) return;
-      const left = Math.round(rect.left + rect.width / 2);
-      const top = Math.round(rect.top);
+      const left = rect.left + rect.width / 2;
+      const top = rect.top + rect.height / 2;
       selfColorPicker.style.left = `${left}px`;
       selfColorPicker.style.top = `${top}px`;
+      // Force style flush so WebKit picks up the new anchor point
+      void selfColorPicker.offsetWidth;
     }
     function resetSelfColorPickerPosition(){
       const rect = getSelfPillRect();
