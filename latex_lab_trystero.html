@@ -1504,6 +1504,28 @@
       return { macros, errors: annotated };
     }
 
+    function mergeMacrosFromPeer(source){
+      if (!source || typeof source !== 'object') return false;
+      const incoming = normalizeMacros(source);
+      let changed = false;
+      for (const [name, body] of Object.entries(incoming)){
+        if (typeof body !== 'string') continue;
+        if (!(name in MACROS)){
+          MACROS[name] = body;
+          changed = true;
+        }
+      }
+      if (changed){
+        try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); }
+        catch(e){}
+        render();
+        if (macrosModal?.classList.contains('show')){
+          macrosText.value = serializeMacros(MACROS);
+        }
+      }
+      return changed;
+    }
+
 
     /* =====================
        State + storage keys
@@ -1691,6 +1713,7 @@
       let lastBroadcastCursor = getCurrentCursor();
       let lastBroadcastName = '';
       let lastBroadcastColor = getSelfColorHex();
+      let lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(MACROS));
 
       // Add these tracking variables
       let joinTimestamp = null;
@@ -1705,6 +1728,7 @@
         lastBroadcastCursor = getCurrentCursor();
         lastBroadcastName = displayName.trim();
         lastBroadcastColor = getSelfColorHex();
+        lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(MACROS));
       }
 
       function notifyHostAssigned(id) {
@@ -1814,7 +1838,8 @@
         const payload = {
           joinedAt: joinTimestamp,
           name: displayName.trim(),
-          color: getSelfColorHex()
+          color: getSelfColorHex(),
+          macros: normalizeMacros(MACROS)
         };
         if (requestReply) payload.requestReply = 1;
         emitInternal('hello', payload);
@@ -2065,6 +2090,14 @@
           updatePeerColor(safeKey, payload.color);
         }
 
+        if (payload.kind === 'macros') {
+          const changed = mergeMacrosFromPeer(payload.macros);
+          if (changed && isRoomOwner && payload.owner !== 1) {
+            sendMacros('union');
+          }
+          return;
+        }
+
         // Handle sync request
         if (payload.kind === 'request') {
           if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
@@ -2083,6 +2116,9 @@
         if (payload.kind === 'hello') {
           if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
           if (typeof payload.joinedAt === 'number') updatePeerJoinTime(senderId || safeKey, payload.joinedAt);
+          if (payload.macros && mergeMacrosFromPeer(payload.macros) && isRoomOwner) {
+            sendMacros('hello-union');
+          }
           if (payload.requestReply && senderId) {
             broadcastJoinInfo(false);
           }
@@ -2232,6 +2268,10 @@
           }
         }
 
+        if (data.macros && typeof data.macros === 'object') {
+          mergeMacrosFromPeer(data.macros);
+        }
+
         if (data.mode === 'classic' || data.mode === 'mixed') {
           if (mode !== data.mode) {
             mode = data.mode;
@@ -2281,7 +2321,8 @@
           owner: isRoomOwner ? 1 : 0,
           host: isRoomOwner ? CLIENT_ID : (hostId || null),
           joinedAt: joinTimestamp,
-          from: CLIENT_ID
+          from: CLIENT_ID,
+          macros: normalizeMacros(MACROS)
         };
       }
 
@@ -2375,6 +2416,9 @@
             lastBroadcastText = editor.value;
             lastBroadcastMode = mode;
           }
+          if (payload.macros && typeof payload.macros === 'object') {
+            lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(payload.macros));
+          }
         } catch (err) {
           console.warn('Collab send failed', err);
         }
@@ -2398,6 +2442,16 @@
       function sendCursorState(force = false) {
         const payload = buildCursorPayload(force);
         if (payload) sendPayload(payload);
+      }
+
+      function sendMacros(reason = 'update') {
+        const payload = {
+          kind: 'macros',
+          macros: normalizeMacros(MACROS),
+          owner: isRoomOwner ? 1 : 0,
+          reason
+        };
+        sendPayload(payload);
       }
 
       async function join(name) {
@@ -2532,6 +2586,7 @@
         }
 
         sendCursorState(true);
+        sendMacros('join');
         
         try {
           localStorage.setItem(LS_ROOM, roomName);
@@ -2579,6 +2634,7 @@
         sendDelta: () => sendDeltaState(),
         sendFull: () => sendFullState(),
         sendCursor: (force = false) => sendCursorState(force),
+        sendMacros: (reason) => sendMacros(reason ?? 'manual'),
         isConnected: () => !!room,
         isApplying: () => applying,
         cleanup,
@@ -3472,6 +3528,7 @@
       try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){}
       macrosText.value = serializeMacros(MACROS);
       render();
+      if (Collab.isConnected()) Collab.sendMacros('reset');
     });
 
     function focusMacroLine(line){
@@ -3497,6 +3554,7 @@
           try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
           macrosText.value = ""; // clear textarea
           render();
+          if (Collab.isConnected()) Collab.sendMacros('save-empty');
           requestAnimationFrame(() => macrosModal.classList.remove('show'));
           return; // don’t try to parse
         }
@@ -3512,6 +3570,7 @@
         try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
         try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
         render();
+        if (Collab.isConnected()) Collab.sendMacros('save');
         requestAnimationFrame(() => macrosModal.classList.remove('show'));
       } catch (err) { console.error('Save handler error:', err); alert('Unexpected error while saving shortcuts. Check console for details.'); }
     });
