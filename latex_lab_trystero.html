@@ -1526,6 +1526,22 @@
       return changed;
     }
 
+    function replaceMacrosFromPeer(source){
+      if (!source || typeof source !== 'object') return false;
+      const incoming = normalizeMacros(source);
+      const nextJSON = JSON.stringify(incoming);
+      const currentJSON = JSON.stringify(normalizeMacros(MACROS));
+      if (nextJSON === currentJSON) return false;
+      MACROS = incoming;
+      try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); }
+      catch(e){}
+      render();
+      if (macrosModal?.classList.contains('show')){
+        macrosText.value = serializeMacros(MACROS);
+      }
+      return true;
+    }
+
 
     /* =====================
        State + storage keys
@@ -2091,9 +2107,21 @@
         }
 
         if (payload.kind === 'macros') {
-          const changed = mergeMacrosFromPeer(payload.macros);
-          if (changed && isRoomOwner && payload.owner !== 1) {
-            sendMacros('union');
+          const reason = payload.reason || '';
+          const fromHost = payload.owner === 1;
+          const replaceReasons = new Set(['save','reset','save-empty','union','hello-union']);
+          let changed = false;
+          if (fromHost || replaceReasons.has(reason)) {
+            changed = replaceMacrosFromPeer(payload.macros);
+          } else {
+            changed = mergeMacrosFromPeer(payload.macros);
+          }
+          if (changed) {
+            lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(MACROS));
+            resetBroadcastCache();
+            if (isRoomOwner && !fromHost && !replaceReasons.has(reason)) {
+              sendMacros('union');
+            }
           }
           return;
         }
@@ -2445,13 +2473,17 @@
       }
 
       function sendMacros(reason = 'update') {
+        const normalized = normalizeMacros(MACROS);
+        const json = JSON.stringify(normalized);
+        if (json === lastBroadcastMacrosJSON && reason === 'update') return;
         const payload = {
           kind: 'macros',
-          macros: normalizeMacros(MACROS),
+          macros: normalized,
           owner: isRoomOwner ? 1 : 0,
           reason
         };
         sendPayload(payload);
+        lastBroadcastMacrosJSON = json;
       }
 
       async function join(name) {
@@ -3432,7 +3464,14 @@
        try { const dark = localStorage.getItem(LS_DARK)==='1'; darkToggle.checked=dark; document.body.classList.toggle('dark', dark);} catch(e){}
       try { const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX)); if (!Number.isNaN(savedPx)) { leftPane.style.flex=`0 0 ${savedPx}px`; preview.style.flex=`1 1 auto`; } } catch(e){}
       try { const savedMode = localStorage.getItem(LS_MODE); if (savedMode === 'classic' || savedMode === 'mixed') modeToggle.checked = (savedMode === 'classic'); } catch(e){}
-      try { const raw = localStorage.getItem(LS_MACROS); if (raw) { const obj = JSON.parse(raw); MACROS = normalizeMacros(obj); } } catch(e){}
+      try {
+        const raw = localStorage.getItem(LS_MACROS);
+        if (raw) {
+          const obj = JSON.parse(raw);
+          MACROS = normalizeMacros(obj);
+          lastBroadcastMacrosJSON = JSON.stringify(MACROS);
+        }
+      } catch(e){}
       // Restore cursor and scroll
        try {
          const cursor = parseInt(localStorage.getItem(LS_CURSOR), 10);
