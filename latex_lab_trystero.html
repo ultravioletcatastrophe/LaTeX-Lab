@@ -3605,7 +3605,8 @@
           return;
         }
         // if (!parsed || Object.keys(parsed).length === 0) { alert('Nothing to save. Add lines like \\newcommand{\\SO}{\\operatorname{SO}}'); return; }
-        MACROS = parsed;
+        const nextMacros = normalizeMacros(parsed || {});
+        MACROS = nextMacros;
         try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
         try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
         render();
