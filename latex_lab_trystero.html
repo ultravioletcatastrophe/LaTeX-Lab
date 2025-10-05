@@ -18,7 +18,6 @@
   <!-- Color Scripts -->
   <script src="./tinycolor-min.js"></script>
   <script src="./nearestColor.js"></script>
-  <script type="application/json" src="./ntc.json"></script>
 
 
   <!-- NOTE: We removed the external Computer Modern CSS to avoid conflicting font-family names. -->
@@ -622,7 +621,7 @@
     const peerAliases = new Map();
     const peerJoinTimes = new Map();
     const colorOverrides = new Map();
-    const LS_COLORS = 'latexlab.colors.v1';
+    const LS_COLORS = 'latexlab.trystero.colors.v1';
     const CARET_STYLE_PROPS = [
       'direction','boxSizing','width','height','overflowX','overflowY',
       'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
@@ -1547,16 +1546,16 @@
        State + storage keys
        ===================== */
     let mode = 'mixed';
-    const LS_CONTENT = 'latexlab.content.v6';
-    const LS_DARK    = 'latexlab.dark.v6';
-    const LS_SPLITPX = 'latexlab.splitpx.v6';
-    const LS_MODE    = 'latexlab.mode.v2';
-    const LS_MACROS  = 'latexlab.macros.v2';
-    const LS_CURSOR  = 'latexlab.cursor.v1';
-    const LS_SCROLL  = 'latexlab.scroll.v1';
-    const LS_NAME    = 'latexlab.name.v1';
-    const LS_ROOM    = 'latexlab.collab.room.v1';
-    const LS_JOIN_WARNING = 'latexlab.joinwarning.v2';
+    const LS_CONTENT = 'latexlab.trystero.content.v6';
+    const LS_DARK    = 'latexlab.trystero.dark.v6';
+    const LS_SPLITPX = 'latexlab.trystero.splitpx.v6';
+    const LS_MODE    = 'latexlab.trystero.mode.v2';
+    const LS_MACROS  = 'latexlab.trystero.macros.v2';
+    const LS_CURSOR  = 'latexlab.trystero.cursor.v1';
+    const LS_SCROLL  = 'latexlab.trystero.scroll.v1';
+    const LS_NAME    = 'latexlab.trystero.name.v1';
+    const LS_ROOM    = 'latexlab.trystero.collab.room.v1';
+    const LS_JOIN_WARNING = 'latexlab.trystero.joinwarning.v2';
 
 
     const DEFAULT_MACROS = { "\\abs":  "\\left|#1\\right|", "\\norm": "\\left\\lVert#1\\right\\rVert" };
@@ -3301,7 +3300,7 @@
        Welcome pop (first-time)
        ===================== */
     (function setupWelcomePop() {
-      const LS_WELCOME='latexlab.welcome.v1';
+      const LS_WELCOME='latexlab.trystero.welcome.v1';
       const pop=document.getElementById('welcomePop');
       const closeBtn=document.getElementById('welcomeClose');
       const backdrop=document.getElementById('welcomeBackdrop');
