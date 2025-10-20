@@ -860,6 +860,15 @@
         wrapper.style.fontSize = (baseSizePx * scale) + 'px';
         wrapper.style.lineHeight = (baseLHpx * scale) + 'px';
         wrapper.style.padding = `${PADDING.top}px ${PADDING.sides}px ${PADDING.bottom}px ${PADDING.sides}px`;
+
+        const editorRect = (typeof editor.getBoundingClientRect === 'function') ? editor.getBoundingClientRect() : null;
+        const editorWidth = (editorRect && typeof editorRect.width === 'number') ? editorRect.width : (editor.clientWidth || 0);
+        if (editorWidth > 0){
+          const contentWidth = Math.max(1, Math.round(editorWidth * scale) - (PADDING.sides * 2));
+          wrapper.style.width = `${contentWidth}px`;
+        } else {
+          wrapper.style.removeProperty('width');
+        }
       }
 
       function isMeaningfulNode(el){

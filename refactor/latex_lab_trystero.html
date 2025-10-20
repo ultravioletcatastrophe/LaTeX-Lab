@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Charset early for correct decoding -->
+  <meta charset="UTF-8" />
+  <!-- Title + Favicon (SVG data URL) -->
+  <title>LaTeX Lab Multiplayer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
+
+
+  <!-- KaTeX core CSS (pinned version) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+  <!-- KaTeX runtime JS (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>
+  <!-- KaTeX auto-render helper (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" defer></script>
+
+  <!-- Color Scripts -->
+  <script src="./tinycolor-min.js"></script>
+  <script src="./nearestColor.js"></script>
+
+
+  <!-- NOTE: We removed the external Computer Modern CSS to avoid conflicting font-family names. -->
+
+
+  <!-- html2canvas and html-to-image (pinned); we keep both for fallback, primary is html-to-image -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js" defer></script>
+
+
+  <!-- Preload frequently used KaTeX font faces for better interactivity + export fidelity -->
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff2" crossorigin>
+
+
+  <!-- Preload CMU Serif weights used for mixed-mode text -->
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2" crossorigin>
+
+
+  <!-- Mobile-friendly viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+  <link rel="stylesheet" href="./latex_lab_shared.css">
+
+  <style>
+    /* Multiplayer toolbar controls */
+    .toolbar .fill{ flex:1 1 auto; }
+    .collab-controls{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .collab-controls input{ width:160px; padding:.35rem .55rem; border-radius:6px; border:1px solid var(--border); font-size:14px; }
+    #displayNameInput{ width:140px; }
+    .collab-controls button{ padding:.38rem .7rem; border-radius:6px; border:1px solid var(--border); background:rgba(255,255,255,.95); font-size:14px; cursor:pointer; }
+    body.dark .collab-controls button{ background:linear-gradient(#222,#1b1b1b); }
+    .collab-status{ font-size:12px; opacity:.75; min-width:140px; }
+
+    /* Remote caret overlay */
+    #remoteLayer{ position:absolute; inset:0; pointer-events:none; z-index:3; overflow:visible; }
+    .remote-caret{ position:absolute; top:0; left:0; display:block; pointer-events:none; font-size:12px; font-weight:600; }
+    @keyframes caretBlink { 0%,49%{ opacity:1; } 50%,99%{ opacity:0; } }
+    .remote-caret-bar{ width:2px; border-radius:1px; flex-shrink:0; animation: caretBlink 1.1s steps(1) infinite; position:absolute; top:0; left:0; }
+    .remote-caret-label{
+      position:absolute;
+      padding:2px 6px;
+      border-radius:999px;
+      color:#fff;
+      font-size:11px;
+      line-height:1.2;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+      white-space:nowrap;
+      opacity:0;
+      transition:opacity .14s;
+      pointer-events:none;
+      transform:translate(-50%,-120%);
+      left:50%;
+    }
+    .remote-caret.show-label .remote-caret-label{ opacity:1; }
+    .remote-caret.label-below .remote-caret-label{ transform:translate(-50%,140%); }
+
+    /* Presence pills */
+    .center-controls{ flex:1; display:flex; justify-content:center; min-width:0; }
+    .presence-list{ display:flex; align-items:center; justify-content:center; gap:.65rem; flex-wrap:wrap; font-size:13px; color:var(--text); max-width:100%; }
+    .presence-item{ display:flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,.9); box-shadow:0 1px 2px rgba(0,0,0,.08); max-width:200px; transition:background .18s,border-color .18s,box-shadow .18s; }
+    .presence-item.self{ font-weight:600; cursor:pointer; box-shadow:0 4px 18px rgba(30,167,253,.18); position:relative; }
+    .presence-item.self:hover, .presence-item.self:focus-visible{ box-shadow:0 6px 22px rgba(30,167,253,.24); }
+    body.dark .presence-item{ background:rgba(34,34,34,.85); box-shadow:0 1px 2px rgba(0,0,0,.28); }
+    body.dark .presence-item.self{ background:rgba(48,48,48,.9); box-shadow:0 0 0 1px rgba(30,167,253,.45), 0 10px 26px rgba(0,0,0,.6); }
+    body.dark .presence-item.self:hover, body.dark .presence-item.self:focus-visible{ box-shadow:0 0 0 1px rgba(30,167,253,.6), 0 12px 30px rgba(0,0,0,.68); }
+    .presence-color{ width:10px; height:10px; border-radius:50%; box-shadow:0 0 0 2px rgba(0,0,0,.08); flex-shrink:0; }
+    .presence-main{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .presence-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:142px; }
+    .presence-tone{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; white-space:nowrap; }
+
+    /* Multiplayer welcome modals */
+    .welcome-pop{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: min(480px, calc(100% - 2rem)); background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 38px rgba(0,0,0,.24); padding: 1.1rem 1.3rem; z-index: 99999; display: none; animation: fadeInScale .25s ease; }
+    #joinPop { max-width: min(420px, calc(100% - 2rem)); }
+    .welcome-pop h3 { margin: 0 0 .5rem; }
+    .welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
+    .welcome-pop ul{ margin:0 0 .9rem; padding-left:1.1rem; font-size:13px; line-height:1.5; }
+    .welcome-pop li{ margin-bottom:.45rem; }
+    .welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
+    body.dark .welcome-pop { background: #1e1e1e; }
+    .welcome-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99998; display:none; }
+    .join-pop-option{ display:flex; align-items:center; gap:.4rem; font-size:12px; margin:0 0 .75rem; }
+    .join-pop-option input{ margin:0; }
+    .join-pop-actions{ display:flex; gap:.5rem; justify-content:flex-end; }
+    .join-pop-actions button{ flex:1 1 auto; }
+    @keyframes fadeInScale { from { opacity:0; transform: translate(-50%, -48%) scale(.97); } to { opacity:1; transform: translate(-50%, -50%) scale(1); } }
+    @media (max-width: 520px) { .welcome-pop { width: calc(100% - 2rem); } }
+
+    /* Allow remote caret labels to spill past the gutter */
+    #leftPane { position: relative; }
+    #gutter { position: relative; z-index: 1; }
+    #editorWrap { position: relative; z-index: 2; overflow: visible; }
+  </style>
+</head>
+<body>
+  <!-- ===================== Toolbar ===================== -->
+  <div class="toolbar">
+    <div class="menu" id="snippetsMenu">
+      <button class="menu-button" id="snippetsBtn">🔖 Insert ▾</button>
+      <ul id="snippetsList">
+        <li id="openMatrixGen">Matrix</li>
+        <li id="openTableGen">Table</li>
+        <li id="insertCases">Cases</li>
+      </ul>
+    </div>
+    <button id="macrosBtn" class="menu-button">⚡ Shortcuts</button>
+    <span class="fill"></span>
+    <div class="collab-controls" role="group" aria-label="Collaboration">
+    <button id="shareRoomBtn" style="display:none;">📋 Share Room</button>
+      <input id="displayNameInput" type="text" maxlength="15" placeholder="Your name" autocomplete="off" spellcheck="false" aria-label="Display name">
+      <input id="roomNameInput" type="text" placeholder="Room code" autocomplete="off" spellcheck="false" aria-label="Room name">
+      <button id="roomJoinBtn">Connect</button>
+      <span id="collabStatus" class="collab-status">Offline</span>
+    </div>
+  </div>
+
+
+  <!-- ===================== Split ===================== -->
+  <div class="container">
+    <section id="leftPane">
+      <div id="gutter" aria-hidden="true"></div>
+      <div id="editorWrap">
+        <div id="overlay" aria-hidden="true"></div>
+        <!-- Accessibility: add aria-label -->
+        <textarea id="editor" aria-label="Editor" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type text with $inline$ and $$display$$ math…"></textarea>
+        <div id="measure" aria-hidden="true"></div>
+      </div>
+    </section>
+    <div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
+    <section id="preview" aria-live="polite"></section>
+  </div>
+
+
+  <!-- ===================== Controls ===================== -->
+  <div class="controls">
+    <div class="left-controls">
+      <!-- Mode slider -->
+      <div class="mode" title="Mixed vs Classic rendering">
+        <label class="switch mode" for="modeToggle">
+          <input id="modeToggle" type="checkbox">
+          <span class="track">
+            <span class="stack some"><span>SOME</span><span>MATH</span></span>
+            <span class="stack all"><span>ALL</span><span>MATH</span></span>
+            <span class="thumb"></span>
+          </span>
+        </label>
+        <div>
+          <div id="modeLabel">Mixed</div>
+          <div id="modeDesc">Mixed: type text with $inline$ and $$display$$ math.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="center-controls">
+      <div id="presenceList" class="presence-list" aria-live="polite" aria-label="Participants"></div>
+    </div>
+
+    <div class="right-controls">
+      <!-- Dark slider -->
+      <div class="dark-switch" title="Light / Dark">
+        <label class="switch dark" for="darkToggle">
+          <input id="darkToggle" type="checkbox">
+          <span class="track">
+            <span class="emoji moon">🌙</span>
+            <span class="emoji sun">🌞</span>
+            <span class="thumb"></span>
+          </span>
+        </label>
+      </div>
+
+
+      <button id="pngBtn">🖼️ PNG</button>
+      <!-- <button id="pdfBtn">📄 PDF</button> -->
+      <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
+    </div>
+  </div>
+
+
+  <!-- ===================== Matrix Modal ===================== -->
+  <div class="modal-backdrop" id="matrixModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="matrixTitle">
+      <h3 id="matrixTitle">Insert Matrix</h3>
+      <div class="row">
+        <label>Rows</label><input type="number" id="mRows" min="1" max="20" value="3">
+        <label>Cols</label><input type="number" id="mCols" min="1" max="20" value="3">
+        <label>Type</label>
+        <select id="mType">
+          <option value="pmatrix">pmatrix ( )</option>
+          <option value="bmatrix">bmatrix [ ]</option>
+          <option value="Bmatrix">Bmatrix { }</option>
+          <option value="vmatrix">vmatrix | |</option>
+          <option value="Vmatrix">Vmatrix || ||</option>
+        </select>
+      </div>
+      <div class="preview" id="matrixPrev"></div>
+      <div class="actions">
+        <button class="menu-button" id="mCancel">Cancel</button>
+        <button class="menu-button" id="mInsert">Insert</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== Table Modal ===================== -->
+  <div class="modal-backdrop" id="tableModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
+      <h3 id="tableTitle">Insert Table</h3>
+      <div class="row">
+        <label>Rows</label><input type="number" id="tRows" min="1" max="40" value="3">
+        <label>Cols</label><input type="number" id="tCols" min="1" max="20" value="3">
+        <label>Align</label>
+        <select id="tAlign">
+          <option value="c">center</option>
+          <option value="l">left</option>
+          <option value="r">right</option>
+        </select>
+        <label>Borders</label>
+        <select id="tBorders">
+          <option value="none">none</option>
+          <option value="outer">outer</option>
+          <option value="all">all</option>
+        </select>
+      </div>
+      <div class="preview" id="tablePrev"></div>
+      <div class="actions">
+        <button class="menu-button" id="tCancel">Cancel</button>
+        <button class="menu-button" id="tInsert">Insert</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== Macros Modal ===================== -->
+  <div class="modal-backdrop" id="macrosModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="macrosTitle">
+      <h3 id="macrosTitle">Shortcuts (\newcommand)</h3>
+      <div class="row" style="flex-direction:column; align-items:stretch;">
+        <textarea id="macrosText" style="width:100%;height:220px;font-family:monospace;"></textarea>
+        <small style="opacity:.8;margin-top:.5rem;">
+          Paste lines like: <code>\newcommand{\RR}{\mathbb{R}}</code> or <code>\newcommand{\vect}[1]{\mathbf{#1}}</code>
+        </small>
+      </div>
+      <div class="actions">
+        <button class="menu-button" id="macrosReset">Reset</button>
+        <button class="menu-button" id="macrosCancel">Cancel</button>
+        <button class="menu-button" id="macrosSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== App Script ===================== -->
+  <script type="module" src="./latex_lab_trystero.js"></script>
+
+
+  <!-- ===================== Join warning pop-under ===================== -->
+  <div id="joinPop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="joinPopTitle" style="display:none">
+    <div class="welcome-content">
+      <h3 id="joinPopTitle">⚠️ Warning: Joining an Existing Room</h3>
+      <p>If the room you are trying to join is already populated, joining will replace your editor's contents with the room&rsquo;s shared text.</p>
+      <label class="join-pop-option"><input id="joinPopDontShow" type="checkbox"> Don&rsquo;t show this again</label>
+      <div class="join-pop-actions">
+        <button id="joinPopCancel">❌ Cancel</button>
+        <button id="joinPopDismiss">✅ Got it</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== Welcome modal ===================== -->
+  <div id="welcomeBackdrop" class="welcome-backdrop" hidden></div>
+  <div id="welcomePop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="welcomeTitle">
+    <div class="welcome-content">
+      <h3 id="welcomeTitle">👋 Welcome to LaTeX Lab Multiplayer</h3>
+      <p>This is an in-browser multiplayer LaTeX playground with live KaTeX rendering.</p>
+      <ul>
+        <li><strong>Join or create rooms:</strong> pop a room name in the toolbar and anyone using it appears instantly.</li>
+        <li><strong>Live updates:</strong> edits sync peer‑to‑peer using the Trystero protocol.</li>
+        <li><strong>Other features:</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math. Dark mode, PNG exports, and custom shortcuts are sup[orted too.</li>
+      </ul>
+      <button id="welcomeClose">Let’s collaborate</button>
+    </div>
+  </div>
+</body>
+</html>
