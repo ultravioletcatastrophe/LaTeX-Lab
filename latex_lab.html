@@ -687,7 +687,11 @@
     /* =====================
        Render pipeline
        ===================== */
+    function isAtBottom(el, pad = 2){
+      return (el.scrollHeight - el.scrollTop - el.clientHeight) <= pad;
+    }
     function render(){
+      const stickToBottom = isAtBottom(preview);
       preview.innerHTML = '';
       const lines = editor.value.split('\n');
       if (mode === 'classic'){
@@ -708,6 +712,11 @@
         }
       }
       Guides.scheduleRebuild();
+      if (stickToBottom){
+        requestAnimationFrame(() => {
+          preview.scrollTop = Math.max(0, preview.scrollHeight - preview.clientHeight);
+        });
+      }
     }
 
 
@@ -719,7 +728,8 @@
       const ratio = editor.scrollTop / maxE;
       gutter.scrollTop  = editor.scrollTop;
       overlay.scrollTop = editor.scrollTop;
-      preview.scrollTop = ratio * Math.max(0, (preview.scrollHeight - preview.clientHeight));
+      const maxP = Math.max(0, preview.scrollHeight - preview.clientHeight);
+      preview.scrollTop = isAtBottom(editor) ? maxP : ratio * maxP;
     });
 
 
