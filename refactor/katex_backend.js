@@ -1014,7 +1014,7 @@ if (ENABLE_COLLAB) {
       const entry = meta || {};
       const name = entry.display || fallbackNameForPeer(key);
       const colorInfo = entry.color && entry.colorName ? { hex: entry.color, name: entry.colorName } : colorInfoForPeer(key);
-      remoteItems.push({ id: key, text: name, title: `${name} - ${colorInfo.name}`, color: colorInfo.hex, colorName: colorInfo.name });
+      remoteItems.push({ id: key, text: name, title: `${name} · ${colorInfo.name}`, color: colorInfo.hex, colorName: colorInfo.name });
     });
 
     const hasRemotes = remoteItems.length > 0;
@@ -1033,8 +1033,8 @@ if (ENABLE_COLLAB) {
     const selfColorInfo = colorInfoForPeer(CLIENT_ID);
     const selfEntry = {
       id: CLIENT_ID,
-      text: `You - ${baseSelfName}`,
-      title: `${baseSelfName} - ${selfColorInfo.name}`,
+      text: `You · ${baseSelfName}`,
+      title: `${baseSelfName} · ${selfColorInfo.name}`,
       color: selfColorInfo.hex,
       colorName: selfColorInfo.name,
       self: true
@@ -1051,7 +1051,7 @@ if (ENABLE_COLLAB) {
     ordered.forEach(item => {
       const pill = document.createElement('div');
       pill.className = 'presence-item' + (item.self ? ' self' : '');
-      pill.title = item.title || `${item.text} - ${item.colorName}`;
+      pill.title = item.title || `${item.text} · ${item.colorName}`;
 
       const dot = document.createElement('span');
       dot.className = 'presence-color';
@@ -1446,7 +1446,7 @@ if (ENABLE_COLLAB) {
         roomJoinBtn.textContent = 'Disconnect';
         roomJoinBtn.disabled = false;
       } else if (state === 'connecting') {
-        roomJoinBtn.textContent = 'Connecting...';
+        roomJoinBtn.textContent = 'Connecting…';
         roomJoinBtn.disabled = true;
       } else {
         roomJoinBtn.textContent = 'Connect';
@@ -1462,7 +1462,7 @@ if (ENABLE_COLLAB) {
       const count = peers.size;
       const peerLabel = count ? `${count} peer${count === 1 ? '' : 's'}` : 'solo';
       const hostLabel = isRoomOwner ? ' (host)' : '';
-      setStatus(`Room ${roomName} - ${peerLabel}${hostLabel}`);
+      setStatus(`Room ${roomName} · ${peerLabel}${hostLabel}`);
     }
 
     function emitInternal(kind, extra = {}) {
@@ -2133,7 +2133,7 @@ if (ENABLE_COLLAB) {
       roomName = trimmed;
       if (roomInput) roomInput.value = trimmed;
       setButton('connecting');
-      setStatus('Connecting...');
+      setStatus('Connecting…');
 
       try {
         const joinRoomFn = await ensureTrystero();
@@ -2329,7 +2329,7 @@ if (ENABLE_COLLAB) {
         if (navigator.clipboard && window.isSecureContext) {
           navigator.clipboard.writeText(shareUrl).then(() => {
             const original = shareRoomBtn.textContent;
-            shareRoomBtn.textContent = 'Copied!';
+            shareRoomBtn.textContent = '✓ Copied!';
             setTimeout(() => {
               shareRoomBtn.textContent = original;
             }, 2000);
@@ -2362,17 +2362,18 @@ if (ENABLE_COLLAB) {
     };
   })();
 
+  roomInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') roomJoinBtn.click(); });
   roomJoinBtn?.addEventListener('click', async () => {
     if (Collab.isConnected()) {
       Collab.leave();
       return;
     }
     const target = roomInput.value.trim();
-    if (!target) {
-      roomInput.focus();
+    if (shouldSuppressJoinWarning()) {
+      await Collab.join(target);
       return;
     }
-    if (shouldSuppressJoinWarning()) {
+    if (!target) {
       await Collab.join(target);
       return;
     }
@@ -2397,7 +2398,7 @@ function openMatrix(){ updateMatrixPreview(); matrixModal.classList.add('show');
 function openTable(){ updateTablePreview(); tableModal.classList.add('show'); }
 
 function matrixPreviewText(r, c, type){
-  const rows = Array.from({ length: r }, () => Array.from({ length: c }, () => '[]').join(' & ')).join(' \\\\ ');
+  const rows = Array.from({ length: r }, () => Array.from({ length: c }, () => '◻').join(' & ')).join(' \\\\ ');
   return `\\begin{${type}} ${rows} \\end{${type}}`;
 }
 function matrixInsertText(r, c, type){
@@ -2460,7 +2461,7 @@ function buildTableString(r, c, align, borders, cellFill){
 }
 
 function tablePreviewText(r, c, align, borders){
-  return buildTableString(r, c, align, borders, '[]');
+  return buildTableString(r, c, align, borders, '◻');
 }
 
 function tableInsertText(r, c, align, borders){
@@ -2727,7 +2728,7 @@ const Exporter = (() => {
       applyPreviewStyles(wrapper, Math.max(1, EXPORT_SCALE | 0));
       populateWrapper(wrapper);
       if (!Array.from(wrapper.children).some(isMeaningfulNode)){
-        alert('Nothing to export yet - add some text or math first.');
+        alert('Nothing to export yet — add some text or math first.');
         return;
       }
       await ensureFontsReady();
@@ -3455,7 +3456,7 @@ if (SHARE_STATE_LINK && shareBtn) {
     const url = encodeStateToUrl();
     try {
       await navigator.clipboard.writeText(url);
-      shareBtn.textContent = 'Copied!';
+      shareBtn.textContent = '✅ Copied!';
       setTimeout(() => shareBtn.textContent = '🔗 Share link', 1200);
     } catch(e){
       prompt('Copy this link:', url);
@@ -3483,7 +3484,9 @@ if (SHARE_STATE_LINK && shareBtn) {
   function safeGetItem(k){ try { return localStorage.getItem(k); } catch(e) { return null; } }
   function safeSetItem(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
   function safeRemoveItem(k){ try { localStorage.removeItem(k); } catch(e){} }
+  const isModalWelcome = document.body.dataset.welcome === 'modal';
   function lockWorkspace(locking){
+    if (!isModalWelcome) return;
     if (locking){
       if (backdrop){ backdrop.hidden = false; backdrop.style.display = 'block'; }
       if (pop){ pop.setAttribute('aria-modal','true'); }
