@@ -1319,6 +1319,15 @@ if (ENABLE_COLLAB) {
     });
   }
 
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (joinPop && joinPop.style.display === 'block') {
+      pendingJoinRoom = null;
+      hideJoinWarning();
+      e.stopImmediatePropagation();
+    }
+  });
+
   function maybeShowJoinWarning(){
     if (!joinPop || joinWarningDismissed) return;
     try { if (localStorage.getItem(LS_JOIN_WARNING) === '1') return; }
@@ -3603,7 +3612,8 @@ macrosSave?.addEventListener('click', (e) => {
       alert(`Could not parse \\newcommand on line ${first.line}: ${first.reason}.`);
       return;
     }
-    MACROS = parsed;
+    const nextMacros = ENABLE_COLLAB ? normalizeMacros(parsed || {}) : parsed;
+    MACROS = nextMacros;
     try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
     try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
     render();
@@ -3690,7 +3700,11 @@ window.addEventListener('load', () => {
   editor.focus();
 });
 
-window.addEventListener('resize', () => { Guides.syncOverlayAndMirror(); Guides.scheduleRebuild({ force: true }); });
+window.addEventListener('resize', () => {
+  Guides.syncOverlayAndMirror();
+  Guides.scheduleRebuild({ force: true });
+  updateAllRemoteCarets();
+});
 
 if (matrixModal) {
   document.getElementById('mCancel').addEventListener('click', () => matrixModal.classList.remove('show'));
