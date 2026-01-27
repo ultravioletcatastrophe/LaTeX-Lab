@@ -1,5 +1,3 @@
-/* Shared styles for the LaTeX Lab variants */
-
 /* =====================
    Fonts (single source)
    ===================== */
@@ -54,6 +52,13 @@ body{
    Toolbar
    ===================== */
 .toolbar{ border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.5rem; padding:.5rem 1rem; flex-wrap:wrap; }
+.toolbar .fill{ flex:1 1 auto; }
+.collab-controls{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.collab-controls input{ width:160px; padding:.35rem .55rem; border-radius:6px; border:1px solid var(--border); font-size:14px; }
+#displayNameInput{ width:140px; }
+.collab-controls button{ padding:.38rem .7rem; border-radius:6px; border:1px solid var(--border); background:rgba(255,255,255,.95); font-size:14px; cursor:pointer; }
+body.dark .collab-controls button{ background:linear-gradient(#222,#1b1b1b); }
+.collab-status{ font-size:12px; opacity:.75; min-width:140px; }
 .menu{ position:relative; display:inline-block }
 .menu-button, button{
   padding:.45em .7em; border-radius:6px; border:1px solid var(--border);
@@ -86,7 +91,6 @@ body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1
 #gutter .ln:nth-child(odd){ background-color:var(--stripe-light) }
 
 #editorWrap{ position:relative; flex:1; overflow:hidden; background: var(--bg); min-height:0 }
-/*#overlay{ position:absolute; inset:0; pointer-events:none; z-index:2; }*/
 #overlay{
   position:absolute; inset:0; pointer-events:none; z-index:2;
   overflow:auto;                 /* let the overlay content scroll */
@@ -128,6 +132,20 @@ body.dark #divider{ color:#bbb }
 /* Controls */
 .controls{ min-height:88px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:.5rem 1rem 1rem; gap:1rem; background:linear-gradient(to top, rgba(0,0,0,.01), transparent); }
 .left-controls,.right-controls{ display:flex; align-items:center; gap:1rem }
+.center-controls{ flex:1; display:flex; justify-content:center; min-width:0; }
+
+/* Presence list (collab) */
+.presence-list{ display:flex; align-items:center; justify-content:center; gap:.65rem; flex-wrap:wrap; font-size:13px; color:var(--text); max-width:100%; }
+.presence-item{ display:flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,.9); box-shadow:0 1px 2px rgba(0,0,0,.08); max-width:200px; transition:background .18s,border-color .18s,box-shadow .18s; }
+.presence-item.self{ font-weight:600; cursor:pointer; box-shadow:0 4px 18px rgba(30,167,253,.18); position:relative; }
+.presence-item.self:hover, .presence-item.self:focus-visible{ box-shadow:0 6px 22px rgba(30,167,253,.24); }
+body.dark .presence-item{ background:rgba(34,34,34,.85); box-shadow:0 1px 2px rgba(0,0,0,.28); }
+body.dark .presence-item.self{ background:rgba(48,48,48,.9); box-shadow:0 0 0 1px rgba(30,167,253,.45), 0 10px 26px rgba(0,0,0,.6); }
+body.dark .presence-item.self:hover, body.dark .presence-item.self:focus-visible{ box-shadow:0 0 0 1px rgba(30,167,253,.6), 0 12px 30px rgba(0,0,0,.68); }
+.presence-color{ width:10px; height:10px; border-radius:50%; box-shadow:0 0 0 2px rgba(0,0,0,.08); flex-shrink:0; }
+.presence-main{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.presence-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:142px; }
+.presence-tone{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; white-space:nowrap; }
 
 /* Mode slider (wide) */
 .switch.mode{ position:relative; width:120px; height:36px; display:inline-block }
@@ -170,8 +188,69 @@ body.dark .switch.dark .thumb{ background:#2a2a2a }
 /* Mixed mode: use CMU Serif for plain text, let KaTeX keep its own fonts */
 body.mixed #preview { font-family: "CMU Serif"; font-weight: 500; font-size:20px; line-height:1.4; }
 
-/* Make entire pill clickable (bug fix: add missing dot on selector) */
+/* Make entire pill clickable */
 .switch .track { cursor: pointer; }
 
 /* Hidden measuring div to compute line wrap heights */
 #measure{ position:absolute; visibility:hidden; top:-9999px; left:-9999px; box-sizing:content-box; padding:0; margin:0; border:0; white-space:pre-wrap; word-break:break-word; overflow-wrap:break-word; }
+
+/* =====================
+   Collaboration overlays
+   ===================== */
+#remoteLayer{ position:absolute; inset:0; pointer-events:none; z-index:3; overflow:visible; }
+.remote-caret{ position:absolute; top:0; left:0; display:block; pointer-events:none; font-size:12px; font-weight:600; }
+@keyframes caretBlink { 0%,49%{ opacity:1; } 50%,99%{ opacity:0; } }
+.remote-caret-bar{ width:2px; border-radius:1px; flex-shrink:0; animation: caretBlink 1.1s steps(1) infinite; position:absolute; top:0; left:0; }
+.remote-caret-label{
+  position:absolute;
+  padding:2px 6px;
+  border-radius:999px;
+  color:#fff;
+  font-size:11px;
+  line-height:1.2;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);
+  white-space:nowrap;
+  opacity:0;
+  transition:opacity .14s;
+  pointer-events:none;
+  transform:translate(-50%,-120%);
+  left:50%;
+}
+.remote-caret.show-label .remote-caret-label{ opacity:1; }
+.remote-caret.label-below .remote-caret-label{ transform:translate(-50%,140%); }
+
+/* Collab-specific layering */
+body.collab #leftPane { position: relative; }
+body.collab #gutter { position: relative; z-index: 1; }
+body.collab #editorWrap { position: relative; z-index: 2; overflow: visible; }
+body.collab #remoteLayer { overflow: visible; pointer-events: none; }
+
+/* =====================
+   Welcome pop styles
+   ===================== */
+.welcome-pop{ position: fixed; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 1rem; z-index: 99999; display: none; }
+.welcome-pop h3 { margin: 0 0 .5rem; }
+.welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
+.welcome-pop ul{ margin:0 0 .9rem; padding-left:1.1rem; font-size:13px; line-height:1.5; }
+.welcome-pop li{ margin-bottom:.45rem; }
+.welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
+body.dark .welcome-pop { background: #1e1e1e; }
+
+body[data-welcome="corner"] .welcome-pop{ bottom: 1rem; right: 1rem; max-width: 360px; animation: fadeInUp .35s ease; }
+body[data-welcome="modal"] .welcome-pop{ top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: min(480px, calc(100% - 2rem)); border-radius: 12px; box-shadow: 0 18px 38px rgba(0,0,0,.24); padding: 1.1rem 1.3rem; animation: fadeInScale .25s ease; }
+body[data-welcome="modal"] #joinPop{ max-width: min(420px, calc(100% - 2rem)); }
+
+.welcome-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99998; display:none; }
+
+@keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+@keyframes fadeInScale { from { opacity:0; transform: translate(-50%, -48%) scale(.97); } to { opacity:1; transform: translate(-50%, -50%) scale(1); } }
+@media (max-width: 520px) {
+  body[data-welcome="corner"] .welcome-pop { left: 1rem; right: 1rem; max-width: none; }
+  body[data-welcome="modal"] .welcome-pop { width: calc(100% - 2rem); }
+}
+
+/* Join pop options */
+.join-pop-option{ display:flex; align-items:center; gap:.4rem; font-size:12px; margin:0 0 .75rem; }
+.join-pop-option input{ margin:0; }
+.join-pop-actions{ display:flex; gap:.5rem; justify-content:flex-end; }
+.join-pop-actions button{ flex:1 1 auto; }
