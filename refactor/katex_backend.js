@@ -2509,7 +2509,7 @@ function insertAtCursor(text){
    ===================== */
 const Exporter = (() => {
   const EXPORT_SCALE = 8;
-  const PADDING = { top: 20, bottom: 28, sides: 20 };
+  const PADDING = { top: 100, bottom: 100, sides: 100 };
   const raf = () => new Promise(r => requestAnimationFrame(r));
 
   class FontLoadError extends Error {
