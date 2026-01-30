@@ -616,7 +616,7 @@ if (ENABLE_COLLAB) {
 
   function loadNamedColorPalette(){
     try {
-      fetch('./assets/vendor/ntc.json')
+      fetch('./vendor/ntc.json')
         .then(response => {
           if (!response.ok) throw new Error(`Failed to load colors (${response.status})`);
           return response.json();
@@ -1590,7 +1590,7 @@ if (ENABLE_COLLAB) {
     async function ensureTrystero() {
       if (joinRoomImpl) return joinRoomImpl;
       if (!loadPromise) {
-        const sources = ['./assets/vendor/trystero-mqtt.min.js'];
+        const sources = ['./vendor/trystero-mqtt.min.js'];
         loadPromise = (async () => {
           for (const url of sources) {
             try {
