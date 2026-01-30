@@ -2,7 +2,7 @@
 
 LaTeX Lab is a playful, zero‑setup workspace for typesetting math right in your browser. Open the page, start typing, and watch KaTeX render your work as you go. Now with realtime collaboration. ✨
 
-![Single‑player view](./screenshot.png)
+![Single‑player view](./src/images/screenshot.png)
 
 ## Quick Start 🚀
 1. Open `latex_lab.html` for solo editing, or `latex_lab_trystero.html` to collaborate.
@@ -16,7 +16,7 @@ Everything (text, layout, theme, macros) saves locally so you can close the tab 
 
 Open `latex_lab_trystero.html` to work together—no accounts or servers to set up.
 
-![Collaborative view](./screenshot_trystero.png)
+![Collaborative view](./src/images/screenshot_trystero.png)
 
 - Presence pills with names show who’s here at a glance.
 - Live remote carets with labels track where others are editing.
