@@ -1,4 +1,402 @@
-/* =====================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Charset early for correct decoding -->
+  <meta charset="UTF-8" />
+  <!-- Title + Favicon (SVG data URL) -->
+  <title>LaTeX Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
+
+
+  <!-- KaTeX core CSS (pinned version) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+  <!-- KaTeX runtime JS (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>
+  <!-- KaTeX auto-render helper (pinned version) -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" defer></script>
+
+
+  <!-- NOTE: We removed the external Computer Modern CSS to avoid conflicting font-family names. -->
+
+
+  <!-- html2canvas and html-to-image (pinned); we keep both for fallback, primary is html-to-image -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js" defer></script>
+
+
+  <!-- Preload frequently used KaTeX font faces for better interactivity + export fidelity -->
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Main-Italic.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Math-Italic.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_AMS-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size1-Regular.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/KaTeX_Size2-Regular.woff2" crossorigin>
+
+
+  <!-- Preload CMU Serif weights used for mixed-mode text -->
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2" crossorigin>
+
+
+  <!-- Mobile-friendly viewport -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+  <style>
+    /* =====================
+       Fonts (single source)
+       ===================== */
+    /* We define CMU Serif here and DO NOT include the external CM stylesheet to avoid duplication. */
+    @font-face{
+      font-family:"CMU Serif";
+      src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-roman.woff2") format("woff2");
+      font-weight:500; font-style:normal; font-display:swap;
+    }
+    @font-face{
+      font-family:"CMU Serif";
+      src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-500-italic.woff2") format("woff2");
+      font-weight:500; font-style:italic; font-display:swap;
+    }
+    @font-face{
+      font-family:"CMU Serif";
+      src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-roman.woff2") format("woff2");
+      font-weight:700; font-style:normal; font-display:swap;
+    }
+    @font-face{
+      font-family:"CMU Serif";
+      src:url("https://cdn.jsdelivr.net/npm/computer-modern@0.1.3/fonts/cmu-serif-700-italic.woff2") format("woff2");
+      font-weight:700; font-style:italic; font-display:swap;
+    }
+
+
+    /* =====================
+       Theme tokens
+       ===================== */
+    :root{
+      --bg:#ffffff; --text:#111; --gutter-bg:#f4f4f4; --gutter-text:#888;
+      --stripe-light: rgba(0,0,0,.03);
+      --border: rgba(0,0,0,.12);
+    }
+    body.dark{
+      --bg:#121212; --text:#eee; --gutter-bg:#1f1f1f; --gutter-text:#aaa;
+      --stripe-light: rgba(255,255,255,.04);
+      --border: rgba(255,255,255,.14);
+    }
+
+
+    /* =====================
+       Base layout
+       ===================== */
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;overflow:hidden}
+    body{
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      background:var(--bg); color:var(--text);
+      display:flex; flex-direction:column; transition:background .18s,color .18s;
+    }
+
+
+    /* =====================
+       Toolbar
+       ===================== */
+    .toolbar{ border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.5rem; padding:.5rem 1rem; flex-wrap:wrap; }
+    .menu{ position:relative; display:inline-block }
+    .menu-button, button{
+      padding:.45em .7em; border-radius:6px; border:1px solid var(--border);
+      background:rgba(255,255,255,.95); cursor:pointer; font-size:14px; color:inherit;
+    }
+    body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1b) }
+    .menu-button:active, button:active{ transform:translateY(1px) }
+    .menu ul{
+      position:absolute; z-index:10; min-width:220px; margin:.3rem 0 0; padding:.4rem 0;
+      background:var(--bg); color:var(--text); list-style:none; border:1px solid var(--border); border-radius:8px;
+      box-shadow:0 6px 24px rgba(0,0,0,.12); display:none;
+    }
+    .menu.open ul{ display:block }
+    .menu ul li{ padding:.45rem .75rem; cursor:pointer }
+    .menu ul li:hover{ background:var(--stripe-light) }
+
+
+    /* =====================
+       Split panes
+       ===================== */
+    .container{ flex:1; display:flex; min-height:0; overflow:hidden }
+    #leftPane{ flex:0 0 50%; display:flex; min-width:260px; border-right:1px solid var(--border); min-height:0 }
+    #gutter{
+      width:4.8em; padding-top:.6em; padding-bottom:.6em; background:var(--gutter-bg); color:var(--gutter-text);
+      font-family:monospace; font-size:15px; text-align:right; user-select:none; overflow:auto; pointer-events:none;
+      scrollbar-width: none;
+    }
+    #gutter::-webkit-scrollbar{ display:none; }
+    #gutter .ln{display:block; padding-right:.6em}
+    /* Single rule handles both themes */
+    #gutter .ln:nth-child(odd){ background-color:var(--stripe-light) }
+
+
+    #editorWrap{ position:relative; flex:1; overflow:hidden; background: var(--bg); min-height:0 }
+    /*#overlay{ position:absolute; inset:0; pointer-events:none; z-index:2; }*/
+    #overlay{
+      position:absolute; inset:0; pointer-events:none; z-index:2;
+      overflow:auto;                 /* let the overlay content scroll */
+      scrollbar-width: none;         /* hide in Firefox */
+    }
+    #overlay::-webkit-scrollbar{ display:none; }  /* hide in Chromium/WebKit */
+    #overlay .overlay-line{ width:100%; }
+    #overlay .wrap-row{ width:100%; }
+    #editor{
+      position:relative; width:100%; height:100%; padding:.6em 1em .6em 1em; font-family:monospace; font-size:15px; line-height:1.5;
+      border:none; outline:none; background:transparent; color:var(--text); resize:none; overflow:auto;
+      overscroll-behavior: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+
+    #overlay, #gutter, #preview{
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+
+    /* Divider */
+    #divider{
+      width:12px; cursor:col-resize;
+      background:
+        radial-gradient(currentColor 22%, transparent 23%) center 14px/6px 10px no-repeat,
+        radial-gradient(currentColor 22%, transparent 23%) center 28px/6px 10px no-repeat,
+        linear-gradient(90deg, transparent, var(--border), transparent);
+      color:#aaa;
+    }
+    #divider:hover{ color:#777 }
+    body.dark #divider{ color:#bbb }
+
+
+    /* Preview */
+    #preview{ flex:1; padding:1.25rem; overflow:auto; background:var(--bg); color:var(--text); font-size:16px; line-height:1.6; white-space:pre-wrap; min-height:0 }
+
+
+    /* Consistent tab rendering */
+    #editor, #preview { tab-size: 4; -moz-tab-size: 4; }
+
+
+    /* Controls */
+    .controls{ min-height:88px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:.5rem 1rem 1rem; gap:1rem; background:linear-gradient(to top, rgba(0,0,0,.01), transparent); }
+    .left-controls,.right-controls{ display:flex; align-items:center; gap:1rem }
+
+
+    /* Mode slider (wide) */
+    .switch.mode{ position:relative; width:120px; height:36px; display:inline-block }
+    .switch.mode input{ display:none }
+    .switch.mode .track{ position:absolute; inset:0; border-radius:999px; border:1px solid var(--border); background:transparent; display:flex; align-items:center; justify-content:space-between; padding:0 9px; }
+    .switch.mode .thumb{ position:absolute; top:50%; left:4px; width:60px; height:30px; background:#fff; border-radius:999px; box-shadow:0 2px 6px rgba(0,0,0,.22); transform:translate(0,-50%); transition:transform .18s; }
+    body.dark .switch.mode .thumb{ background:#2a2a2a }
+    .stack{ display:flex; flex-direction:column; align-items:center; line-height:1.0; font-size:10px; font-weight:700; opacity:.45; transition:opacity .18s; user-select:none; }
+    .switch.mode .stack { transform: translateY(-0.5px); }
+    #modeToggle:checked + .track .stack.all{ opacity:1 }
+    #modeToggle:not(:checked) + .track .stack.some{ opacity:1 }
+    #modeToggle:not(:checked) + .track .thumb{ transform:translate(50px,-50%) }
+
+
+    /* Dark slider (compact) */
+    .switch.dark{ position:relative; width:64px; height:34px; display:inline-block }
+    .switch.dark input{ display:none }
+    .switch.dark .track{ position:absolute; inset:0; border-radius:999px; border:1px solid var(--border); background:transparent; display:flex; align-items:center; justify-content:space-between; padding:0 6px; }
+    .switch.dark .thumb{ position:absolute; top:50%; left:3px; width:28px; height:28px; background:#fff; border-radius:50%; box-shadow:0 2px 6px rgba(0,0,0,.22); transform:translate(0,-50%); transition:transform .18s; }
+    body.dark .switch.dark .thumb{ background:#2a2a2a }
+    .emoji{ font-size:16px; filter: drop-shadow(0 0 2px rgba(0,0,0,.35)); opacity:.45; transition:opacity .18s; user-select:none }
+    #darkToggle:not(:checked) + .track .sun{ opacity:1 }
+    #darkToggle:checked + .track .moon{ opacity:1 }
+    #darkToggle:checked + .track .thumb{ transform:translate(28px,-50%) }
+
+
+    /* Labels */
+    #modeLabel{ font-weight:600; min-width:64px }
+    #modeDesc{ font-size:12px; opacity:.8 }
+
+
+    /* Modals */
+    .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .modal-backdrop.show{ display:flex }
+    .modal{ width:min(540px,92vw); background:var(--bg); color:var(--text); border-radius:12px; padding:1rem; border:1px solid var(--border) }
+    .modal h3{ margin:.2rem 0 1rem 0 }
+    .modal .row{ display:flex; gap:.75rem; align-items:center; margin:.5rem 0; flex-wrap:wrap }
+    .modal label{ min-width:4.5rem }
+    .modal input[type="number"], .modal select { width:100px; padding:.35rem .4rem }
+    .modal .preview{ margin-top:.75rem; padding:.75rem; border-radius:8px; border:1px dashed var(--border); font-family:monospace; white-space:pre-wrap; max-height:240px; overflow:auto; }
+    .modal .actions{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem }
+
+
+    /* Mixed mode: use CMU Serif for plain text, let KaTeX keep its own fonts */
+    body.mixed #preview { font-family: "CMU Serif"; font-weight: 500; font-size:20px; line-height:1.4; }
+
+
+    /* Make entire pill clickable (bug fix: add missing dot on selector) */
+    .switch .track { cursor: pointer; }
+
+
+    /* Hidden measuring div to compute line wrap heights */
+    #measure{ position:absolute; visibility:hidden; top:-9999px; left:-9999px; box-sizing:content-box; padding:0; margin:0; border:0; white-space:pre-wrap; word-break:break-word; overflow-wrap:break-word; }
+
+
+    /* Welcome pop-under styling */
+    .welcome-pop{ position: fixed; bottom: 1rem; right: 1rem; max-width: 360px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); padding: 1rem; z-index: 99999; display: none; animation: fadeInUp .35s ease; }
+    .welcome-pop h3 { margin: 0 0 .5rem; }
+    .welcome-pop p  { font-size: 13px; line-height: 1.45; margin: 0 0 .75rem; }
+    .welcome-pop button { padding: .35em .7em; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,.95); cursor: pointer; font-size: 13px; }
+    body.dark .welcome-pop { background: #1e1e1e; }
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+    @media (max-width: 520px) { .welcome-pop { left: 1rem; right: 1rem; max-width: none; } }
+  </style>
+</head>
+<body>
+  <!-- ===================== Toolbar ===================== -->
+  <div class="toolbar">
+    <div class="menu" id="snippetsMenu">
+      <button class="menu-button" id="snippetsBtn">🔖 Insert ▾</button>
+      <ul id="snippetsList">
+        <li id="openMatrixGen">Matrix</li>
+        <li id="openTableGen">Table</li>
+        <li id="insertCases">Cases</li>
+      </ul>
+    </div>
+    <button id="shareBtn" class="menu-button">🔗 Share link</button>
+    <button id="macrosBtn" class="menu-button">⚡ Shortcuts</button>
+  </div>
+
+
+  <!-- ===================== Split ===================== -->
+  <div class="container">
+    <section id="leftPane">
+      <div id="gutter" aria-hidden="true"></div>
+      <div id="editorWrap">
+        <div id="overlay" aria-hidden="true"></div>
+        <!-- Accessibility: add aria-label -->
+        <textarea id="editor" aria-label="Editor" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type text with $inline$ and $$display$$ math…"></textarea>
+        <div id="measure" aria-hidden="true"></div>
+      </div>
+    </section>
+    <div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
+    <section id="preview" aria-live="polite"></section>
+  </div>
+
+
+  <!-- ===================== Controls ===================== -->
+  <div class="controls">
+    <div class="left-controls">
+      <!-- Mode slider -->
+      <div class="mode" title="Mixed vs Classic rendering">
+        <label class="switch mode" for="modeToggle">
+          <input id="modeToggle" type="checkbox">
+          <span class="track">
+            <span class="stack some"><span>SOME</span><span>MATH</span></span>
+            <span class="stack all"><span>ALL</span><span>MATH</span></span>
+            <span class="thumb"></span>
+          </span>
+        </label>
+        <div>
+          <div id="modeLabel">Mixed</div>
+          <div id="modeDesc">Mixed: type text with $inline$ and $$display$$ math.</div>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="right-controls">
+      <!-- Dark slider -->
+      <div class="dark-switch" title="Light / Dark">
+        <label class="switch dark" for="darkToggle">
+          <input id="darkToggle" type="checkbox">
+          <span class="track">
+            <span class="emoji moon">🌙</span>
+            <span class="emoji sun">🌞</span>
+            <span class="thumb"></span>
+          </span>
+        </label>
+      </div>
+
+
+      <button id="pngBtn">🖼️ PNG</button>
+      <!-- <button id="pdfBtn">📄 PDF</button> -->
+      <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
+    </div>
+  </div>
+
+
+  <!-- ===================== Matrix Modal ===================== -->
+  <div class="modal-backdrop" id="matrixModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="matrixTitle">
+      <h3 id="matrixTitle">Insert Matrix</h3>
+      <div class="row">
+        <label>Rows</label><input type="number" id="mRows" min="1" max="20" value="3">
+        <label>Cols</label><input type="number" id="mCols" min="1" max="20" value="3">
+        <label>Type</label>
+        <select id="mType">
+          <option value="pmatrix">pmatrix ( )</option>
+          <option value="bmatrix">bmatrix [ ]</option>
+          <option value="Bmatrix">Bmatrix { }</option>
+          <option value="vmatrix">vmatrix | |</option>
+          <option value="Vmatrix">Vmatrix || ||</option>
+        </select>
+      </div>
+      <div class="preview" id="matrixPrev"></div>
+      <div class="actions">
+        <button class="menu-button" id="mCancel">Cancel</button>
+        <button class="menu-button" id="mInsert">Insert</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== Table Modal ===================== -->
+  <div class="modal-backdrop" id="tableModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
+      <h3 id="tableTitle">Insert Table</h3>
+      <div class="row">
+        <label>Rows</label><input type="number" id="tRows" min="1" max="40" value="3">
+        <label>Cols</label><input type="number" id="tCols" min="1" max="20" value="3">
+        <label>Align</label>
+        <select id="tAlign">
+          <option value="c">center</option>
+          <option value="l">left</option>
+          <option value="r">right</option>
+        </select>
+        <label>Borders</label>
+        <select id="tBorders">
+          <option value="none">none</option>
+          <option value="outer">outer</option>
+          <option value="all">all</option>
+        </select>
+      </div>
+      <div class="preview" id="tablePrev"></div>
+      <div class="actions">
+        <button class="menu-button" id="tCancel">Cancel</button>
+        <button class="menu-button" id="tInsert">Insert</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== Macros Modal ===================== -->
+  <div class="modal-backdrop" id="macrosModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="macrosTitle">
+      <h3 id="macrosTitle">Shortcuts (\newcommand)</h3>
+      <div class="row" style="flex-direction:column; align-items:stretch;">
+        <textarea id="macrosText" style="width:100%;height:220px;font-family:monospace;"></textarea>
+        <small style="opacity:.8;margin-top:.5rem;">
+          Paste lines like: <code>\newcommand{\RR}{\mathbb{R}}</code> or <code>\newcommand{\vect}[1]{\mathbf{#1}}</code>
+        </small>
+      </div>
+      <div class="actions">
+        <button class="menu-button" id="macrosReset">Reset</button>
+        <button class="menu-button" id="macrosCancel">Cancel</button>
+        <button class="menu-button" id="macrosSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===================== App Script ===================== -->
+  <script type="module">
+    /* =====================
        Element refs
        ===================== */
     const editor   = document.getElementById('editor');
@@ -1474,3 +1872,21 @@
         render(); requestAnimationFrame(() => macrosModal.classList.remove('show'));
       } catch (err) { console.error('Save handler error:', err); alert('Unexpected error while saving shortcuts. Check console for details.'); }
     });
+  </script>
+
+
+  <!-- ===================== Welcome pop-under ===================== -->
+  <div id="welcomePop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="welcomeTitle">
+    <div class="welcome-content">
+      <h3 id="welcomeTitle">👋 Welcome to LaTeX Lab</h3>
+      <p>
+        This is an in-browser LaTeX playground with live KaTeX rendering.
+        Type plain text and math, switch between <b>Mixed</b> mode (text + $inline$ / $$display$$ math)
+        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
+        Dark mode and custom shortcuts are supported too.
+      </p>
+      <button id="welcomeClose">Got it</button>
+    </div>
+  </div>
+</body>
+</html>
