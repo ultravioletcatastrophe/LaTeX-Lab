@@ -616,7 +616,7 @@ if (ENABLE_COLLAB) {
 
   function loadNamedColorPalette(){
     try {
-      fetch('./vendor/ntc.json')
+      fetch('./assets/vendor/ntc.json')
         .then(response => {
           if (!response.ok) throw new Error(`Failed to load colors (${response.status})`);
           return response.json();
