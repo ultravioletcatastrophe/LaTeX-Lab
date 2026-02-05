@@ -3,6 +3,10 @@ const ENABLE_COLLAB = !!config.collab;
 const SHARE_STATE_LINK = config.shareStateLink !== false;
 const STORAGE_PREFIX = config.storagePrefix || (ENABLE_COLLAB ? 'latexlab.trystero' : 'latexlab');
 const key = (suffix) => `${STORAGE_PREFIX}.${suffix}`;
+const SEARCH_PARAMS = new URLSearchParams(location.search);
+const ENABLE_COLLAB_DEBUG = config.enableCollabDebug === true || SEARCH_PARAMS.get('collabDebug') === '1';
+const STATE_HASH_KEY = 'state';
+const MIN_SPLIT_WIDTH_PX = 240;
 
 const LS_CONTENT = key('content.v6');
 const LS_DARK = key('dark.v6');
@@ -12,6 +16,24 @@ const LS_MACROS = key('macros.v2');
 const LS_CURSOR = key('cursor.v1');
 const LS_SCROLL = key('scroll.v1');
 const LS_WELCOME = key('welcome.v1');
+
+function storageGetItem(storageKey){
+  try { return localStorage.getItem(storageKey); } catch(e) { return null; }
+}
+function storageSetItem(storageKey, value){
+  try { localStorage.setItem(storageKey, value); return true; } catch(e) { return false; }
+}
+function storageRemoveItem(storageKey){
+  try { localStorage.removeItem(storageKey); return true; } catch(e) { return false; }
+}
+function storageGetJSON(storageKey){
+  const raw = storageGetItem(storageKey);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
+}
+function storageSetJSON(storageKey, value){
+  try { return storageSetItem(storageKey, JSON.stringify(value)); } catch(e) { return false; }
+}
 
 const editor = document.getElementById('editor');
 const gutter = document.getElementById('gutter');
@@ -311,6 +333,23 @@ const Guides = (() => {
 
 function isAtBottom(el, pad = 2){
   return (el.scrollHeight - el.scrollTop - el.clientHeight) <= pad;
+}
+
+function clampSplitWidth(rawPx){
+  const numeric = Number(rawPx);
+  if (!Number.isFinite(numeric)) return null;
+  const container = document.querySelector('.container');
+  const containerWidth = Math.max(0, container?.clientWidth || 0);
+  const maxWidth = Math.max(MIN_SPLIT_WIDTH_PX, containerWidth - MIN_SPLIT_WIDTH_PX);
+  return Math.max(MIN_SPLIT_WIDTH_PX, Math.min(maxWidth, numeric));
+}
+
+function applySplitWidth(px){
+  const clamped = clampSplitWidth(px);
+  if (!Number.isFinite(clamped)) return null;
+  leftPane.style.flex = `0 0 ${clamped}px`;
+  preview.style.flex = '1 1 auto';
+  return clamped;
 }
 
 let updateAllRemoteCarets = () => {};
@@ -651,29 +690,23 @@ if (ENABLE_COLLAB) {
   }
 
   function saveColorOverrides(){
-    try {
-      const data = {};
-      if (colorOverrides.has(CLIENT_ID)) {
-        data[CLIENT_ID] = colorOverrides.get(CLIENT_ID);
-      }
-      localStorage.setItem(LS_COLORS, JSON.stringify(data));
-    } catch(e) {}
+    const data = {};
+    if (colorOverrides.has(CLIENT_ID)) {
+      data[CLIENT_ID] = colorOverrides.get(CLIENT_ID);
+    }
+    storageSetJSON(LS_COLORS, data);
   }
 
   (function loadColorOverrides(){
-    try {
-      const raw = localStorage.getItem(LS_COLORS);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        Object.entries(parsed).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            const normalized = normalizeHex(value);
-            if (normalized) colorOverrides.set(key, normalized);
-          }
-        });
-      }
-    } catch(e) {}
+    const parsed = storageGetJSON(LS_COLORS);
+    if (parsed && typeof parsed === 'object') {
+      Object.entries(parsed).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          const normalized = normalizeHex(value);
+          if (normalized) colorOverrides.set(key, normalized);
+        }
+      });
+    }
   })();
 
   function updateSelfCaretAppearance(info = null){
@@ -1228,8 +1261,7 @@ if (ENABLE_COLLAB) {
       }
     }
     if (changed){
-      try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); }
-      catch(e){}
+      storageSetJSON(LS_MACROS, MACROS);
       render();
       if (macrosModal?.classList.contains('show')){
         macrosText.value = serializeMacros(MACROS);
@@ -1245,8 +1277,7 @@ if (ENABLE_COLLAB) {
     const currentJSON = JSON.stringify(normalizeMacros(MACROS));
     if (nextJSON === currentJSON) return false;
     MACROS = incoming;
-    try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); }
-    catch(e){}
+    storageSetJSON(LS_MACROS, MACROS);
     render();
     if (macrosModal?.classList.contains('show')){
       macrosText.value = serializeMacros(MACROS);
@@ -1265,8 +1296,7 @@ if (ENABLE_COLLAB) {
   let pendingJoinRoom = null;
 
   function shouldSuppressJoinWarning(){
-    try { return localStorage.getItem(LS_JOIN_WARNING) === '1'; }
-    catch(e){ return false; }
+    return storageGetItem(LS_JOIN_WARNING) === '1';
   }
 
   function showJoinWarning(){
@@ -1293,8 +1323,7 @@ if (ENABLE_COLLAB) {
   if (joinPopDismiss){
     joinPopDismiss.addEventListener('click', () => {
       if (joinPopDontShow && joinPopDontShow.checked){
-        try { localStorage.setItem(LS_JOIN_WARNING, '1'); }
-        catch(e){}
+        storageSetItem(LS_JOIN_WARNING, '1');
         joinWarningDismissed = true;
       } else {
         joinWarningDismissed = false;
@@ -1330,8 +1359,7 @@ if (ENABLE_COLLAB) {
 
   function maybeShowJoinWarning(){
     if (!joinPop || joinWarningDismissed) return;
-    try { if (localStorage.getItem(LS_JOIN_WARNING) === '1') return; }
-    catch(e){}
+    if (storageGetItem(LS_JOIN_WARNING) === '1') return;
     if (joinPopDontShow) joinPopDontShow.checked = false;
     joinPop.style.display = 'block';
   }
@@ -1347,7 +1375,7 @@ if (ENABLE_COLLAB) {
   displayNameInput?.addEventListener('input', () => {
     const raw = displayNameInput.value || '';
     displayName = raw.trim();
-    try { localStorage.setItem(LS_NAME, raw); } catch(e){}
+    storageSetItem(LS_NAME, raw);
     notifyNameChange();
   });
 
@@ -1682,7 +1710,7 @@ if (ENABLE_COLLAB) {
         editor.selectionStart = nextStart;
         editor.selectionEnd = nextEnd;
       }
-      try { localStorage.setItem(LS_CONTENT, newText); } catch(e) {}
+      storageSetItem(LS_CONTENT, newText);
       return true;
     }
 
@@ -1951,7 +1979,7 @@ if (ENABLE_COLLAB) {
           editor.placeholder = (mode === 'classic') ?
             'Type lines of pure TeX; each line renders as display math' :
             'Type text with $inline$ and $$display$$ math';
-          try { localStorage.setItem(LS_MODE, mode); } catch(e) {}
+          storageSetItem(LS_MODE, mode);
           needsRender = true;
           stateChanged = true;
         }
@@ -2245,9 +2273,7 @@ if (ENABLE_COLLAB) {
       sendCursorState(true);
       sendMacros('join');
 
-      try {
-        localStorage.setItem(LS_ROOM, roomName);
-      } catch(e) {}
+      storageSetItem(LS_ROOM, roomName);
     }
 
     const debugApi = {
@@ -2279,14 +2305,17 @@ if (ENABLE_COLLAB) {
     };
 
     if (typeof window !== 'undefined') {
-      window.CollabDebug = debugApi;
+      if (ENABLE_COLLAB_DEBUG) window.CollabDebug = debugApi;
+      else if ('CollabDebug' in window) {
+        try { delete window.CollabDebug; } catch(e) {}
+      }
     }
 
     return {
       join,
       leave: () => {
         cleanup();
-        try { localStorage.removeItem(LS_ROOM); } catch(e){}
+        storageRemoveItem(LS_ROOM);
       },
       sendDelta: () => sendDeltaState(),
       sendFull: () => sendFullState(),
@@ -2509,7 +2538,7 @@ function insertAtCursor(text){
   el.focus();
   render();
   updateAllRemoteCarets();
-  try { localStorage.setItem(LS_CONTENT, el.value); } catch(e){}
+  storageSetItem(LS_CONTENT, el.value);
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
 }
@@ -2768,7 +2797,7 @@ pngBtn?.addEventListener('click', () => Exporter.exportPNG());
 clearBtn?.addEventListener('click', () => {
   if (!confirm('Clear editor and saved text?')) return;
   editor.value = '';
-  try { localStorage.removeItem(LS_CONTENT); } catch(e){}
+  storageRemoveItem(LS_CONTENT);
   try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
   render();
   updateAllRemoteCarets();
@@ -2781,7 +2810,6 @@ clearBtn?.addEventListener('click', () => {
    ===================== */
 (function makeResizable(){
   const container = document.querySelector('.container');
-  const minWidth = 240;
   let pointerId = null;
   let startX = 0;
   let startLeft = 0;
@@ -2790,20 +2818,18 @@ clearBtn?.addEventListener('click', () => {
   divider.style.touchAction = 'none';
 
   function clampWidth(raw){
-    const max = container.clientWidth - minWidth;
-    return Math.max(minWidth, Math.min(max, raw));
+    return clampSplitWidth(raw);
   }
 
   function applyWidth(px){
-    leftPane.style.flex = `0 0 ${px}px`;
-    preview.style.flex = '1 1 auto';
+    applySplitWidth(px);
     Guides.syncOverlayAndMirror();
     Guides.scheduleRebuild();
     updateAllRemoteCarets();
   }
 
   function persistWidth(px){
-    try { localStorage.setItem(LS_SPLITPX, String(px)); } catch(e){}
+    if (Number.isFinite(px)) storageSetItem(LS_SPLITPX, String(px));
   }
 
   function releasePointer(e){
@@ -2841,18 +2867,18 @@ clearBtn?.addEventListener('click', () => {
 
   divider.addEventListener('dblclick', () => {
     const cw = container.clientWidth;
-    const mid = Math.max(minWidth, Math.min(cw - minWidth, cw / 2));
-    applyWidth(mid);
-    persistWidth(mid);
+    const mid = clampWidth(cw / 2);
+    if (Number.isFinite(mid)) {
+      applyWidth(mid);
+      persistWidth(mid);
+    }
   });
 
   function restoreSaved(){
-    try {
-      const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX));
-      if (!Number.isNaN(savedPx)){
-        applyWidth(clampWidth(savedPx));
-      }
-    } catch(e){}
+    const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
+    if (!Number.isNaN(savedPx)){
+      applyWidth(savedPx);
+    }
   }
 
   restoreSaved();
@@ -2877,7 +2903,7 @@ editor.addEventListener('scroll', () => {
 editor.addEventListener('input', () => {
   render();
   updateAllRemoteCarets();
-  try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){}
+  storageSetItem(LS_CONTENT, editor.value);
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
 });
@@ -2889,7 +2915,7 @@ modeToggle?.addEventListener('change', () => {
   editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
   document.body.classList.toggle('mixed',   mode === 'mixed');
   document.body.classList.toggle('classic', mode === 'classic');
-  try { localStorage.setItem(LS_MODE, mode); } catch(e) {}
+  storageSetItem(LS_MODE, mode);
   render();
   if (!Collab.isApplying()) Collab.sendDelta();
 });
@@ -2898,7 +2924,7 @@ if (darkToggle) {
   darkToggle.addEventListener('change', () => {
     const isDark = darkToggle.checked;
     document.body.classList.toggle('dark', isDark);
-    try { localStorage.setItem(LS_DARK, isDark ? '1' : '0'); } catch(e) {}
+    storageSetItem(LS_DARK, isDark ? '1' : '0');
     render();
     requestAnimationFrame(() => {
       try { editor.focus({ preventScroll: true }); }
@@ -2928,7 +2954,7 @@ editor.addEventListener('keydown', (e) => {
   }
   render();
   updateAllRemoteCarets();
-  try { localStorage.setItem(LS_CONTENT, editor.value); } catch(e){}
+  storageSetItem(LS_CONTENT, editor.value);
   broadcastCursorPosition();
   if (!Collab.isApplying()) Collab.sendDelta();
 });
@@ -2954,7 +2980,7 @@ editor.addEventListener('keydown', (e) => {
         editor.selectionStart = editor.selectionEnd = left;
         render();
         updateAllRemoteCarets();
-        try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+        storageSetItem(LS_CONTENT, editor.value);
         if (!Collab.isApplying()) Collab.sendDelta();
         broadcastCursorPosition();
         return;
@@ -2997,7 +3023,7 @@ editor.addEventListener('keydown', (e) => {
 
     render();
     updateAllRemoteCarets();
-    try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+    storageSetItem(LS_CONTENT, editor.value);
     if (!Collab.isApplying()) Collab.sendDelta();
     broadcastCursorPosition();
     return;
@@ -3012,7 +3038,7 @@ editor.addEventListener('keydown', (e) => {
     else { editor.selectionStart = editor.selectionEnd = start + 1; }
     render();
     updateAllRemoteCarets();
-    try { localStorage.setItem(LS_CONTENT, editor.value); } catch {}
+    storageSetItem(LS_CONTENT, editor.value);
     if (!Collab.isApplying()) Collab.sendDelta();
     broadcastCursorPosition();
     return;
@@ -3024,10 +3050,8 @@ editor.addEventListener('click', saveCursorAndScroll);
 editor.addEventListener('input', saveCursorAndScroll);
 
 function saveCursorAndScroll() {
-  try {
-    localStorage.setItem(LS_CURSOR, String(editor.selectionStart));
-    localStorage.setItem(LS_SCROLL, String(editor.scrollTop));
-  } catch(e) {}
+  storageSetItem(LS_CURSOR, String(editor.selectionStart));
+  storageSetItem(LS_SCROLL, String(editor.scrollTop));
 }
 
 /* =====================
@@ -3417,28 +3441,54 @@ function decompressState(token){
 function b64encode(str){ const bytes = new TextEncoder().encode(str); let bin=''; bytes.forEach(b => bin += String.fromCharCode(b)); return btoa(bin); }
 function b64decode(b64){ const bin=atob(b64); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
 
+function normalizeStateToken(token){
+  if (typeof token !== 'string') return '';
+  return token.trim().replace(/ /g, '+');
+}
+
+function getStateTokenFromHash(rawHash = location.hash){
+  const fragment = String(rawHash || '').replace(/^#/, '');
+  if (!fragment) return '';
+  try {
+    const params = new URLSearchParams(fragment);
+    const parsed = params.get(STATE_HASH_KEY);
+    if (parsed) return normalizeStateToken(parsed);
+  } catch(e) {}
+  const legacy = fragment.match(new RegExp(`(?:^|&)${STATE_HASH_KEY}=([^&]*)`));
+  if (!legacy) return '';
+  try { return normalizeStateToken(decodeURIComponent(legacy[1] || '')); }
+  catch(e) { return normalizeStateToken(legacy[1] || ''); }
+}
+
+function setStateTokenOnUrl(targetUrl, token){
+  const existingHash = String(targetUrl.hash || '').replace(/^#/, '');
+  const params = new URLSearchParams(existingHash);
+  params.set(STATE_HASH_KEY, token);
+  targetUrl.hash = params.toString();
+}
+
 function encodeStateToUrl(){
   const leftWidth = leftPane.getBoundingClientRect().width;
-  const state = { t: editor.value, m: (mode === 'classic') ? 1 : 0, d: darkToggle?.checked ? 1 : 0, s: leftWidth, x: MACROS };
+  const splitWidth = clampSplitWidth(leftWidth) ?? leftWidth;
+  const state = { t: editor.value, m: (mode === 'classic') ? 1 : 0, d: darkToggle?.checked ? 1 : 0, s: splitWidth, x: MACROS };
   const compressed = compressState(state);
   const payload = compressed || b64encode(JSON.stringify(state));
   const shareUrl = new URL(location.href);
-  shareUrl.hash = 'state=' + payload;
+  setStateTokenOnUrl(shareUrl, payload);
   if (history.replaceState){
     history.replaceState(null, '', shareUrl.toString());
   } else {
-    location.hash = 'state=' + payload;
+    location.hash = shareUrl.hash;
   }
   return shareUrl.toString();
 }
 
 function tryLoadStateFromHash(){
-  const m = location.hash.match(/state=([^&]+)/);
-  if (!m) return false;
-  const token = m[1];
+  const token = getStateTokenFromHash();
+  if (!token) return false;
   let st = decompressState(token);
   if (!st){
-    try { st = JSON.parse(b64decode(token)); } catch(e){ return false; }
+    try { st = JSON.parse(b64decode(normalizeStateToken(token))); } catch(e){ return false; }
   }
   if (typeof st.t === 'string') editor.value = st.t;
   if (modeToggle) modeToggle.checked = (st.m === 1);
@@ -3446,13 +3496,12 @@ function tryLoadStateFromHash(){
   document.body.classList.toggle('dark', st.d === 1);
   if (darkToggle) darkToggle.checked = (st.d === 1);
   if (typeof st.s === 'number' && !Number.isNaN(st.s)){
-    leftPane.style.flex = `0 0 ${st.s}px`;
-    preview.style.flex = '1 1 auto';
-    try { localStorage.setItem(LS_SPLITPX, String(st.s)); } catch(e){}
+    const clamped = applySplitWidth(st.s);
+    if (Number.isFinite(clamped)) storageSetItem(LS_SPLITPX, String(clamped));
   }
   if (st.x && typeof st.x === 'object') {
     MACROS = normalizeMacros(st.x);
-    try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){}
+    storageSetJSON(LS_MACROS, MACROS);
   }
   modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
   modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
@@ -3490,9 +3539,6 @@ if (SHARE_STATE_LINK && shareBtn) {
     return false;
   }
   function shouldResetFlag(){ const q = (getQueryParam('welcome') || '').toLowerCase(); return q === 'reset' || q === 'clear'; }
-  function safeGetItem(k){ try { return localStorage.getItem(k); } catch(e) { return null; } }
-  function safeSetItem(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
-  function safeRemoveItem(k){ try { localStorage.removeItem(k); } catch(e){} }
   const isModalWelcome = document.body.dataset.welcome === 'modal';
   function lockWorkspace(locking){
     if (!isModalWelcome) return;
@@ -3522,7 +3568,7 @@ if (SHARE_STATE_LINK && shareBtn) {
     if (!pop) return;
     pop.style.display = 'none';
     lockWorkspace(false);
-    if (setFlag) safeSetItem(LS_WELCOME, '1');
+    if (setFlag) storageSetItem(LS_WELCOME, '1');
   }
   function showWelcome(){
     if (!pop || !closeBtn) return;
@@ -3532,9 +3578,9 @@ if (SHARE_STATE_LINK && shareBtn) {
     closeBtn.addEventListener('click', () => dismissWelcome(true), { once: true });
   }
   function init(){
-    if (shouldResetFlag()) safeRemoveItem(LS_WELCOME);
+    if (shouldResetFlag()) storageRemoveItem(LS_WELCOME);
     const forced = shouldForceShow();
-    const seen = !!safeGetItem(LS_WELCOME);
+    const seen = !!storageGetItem(LS_WELCOME);
     if (forced || !seen) { showWelcome(); if (forced) return; }
   }
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init, { once:true }); } else { init(); }
@@ -3573,7 +3619,7 @@ macrosBtn?.addEventListener('click', () => { macrosText.value = serializeMacros(
 macrosCancel?.addEventListener('click', () => macrosModal.classList.remove('show'));
 macrosReset?.addEventListener('click', () => {
   MACROS = { ...DEFAULT_MACROS };
-  try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){}
+  storageSetJSON(LS_MACROS, MACROS);
   macrosText.value = serializeMacros(MACROS);
   render();
   if (Collab.isConnected()) Collab.sendMacros('reset');
@@ -3598,7 +3644,7 @@ macrosSave?.addEventListener('click', (e) => {
     const raw = macrosText.value;
     if (raw === "") {
       MACROS = {};
-      try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch(e){}
+      storageSetJSON(LS_MACROS, MACROS);
       macrosText.value = "";
       render();
       requestAnimationFrame(() => macrosModal.classList.remove('show'));
@@ -3614,7 +3660,7 @@ macrosSave?.addEventListener('click', (e) => {
     }
     const nextMacros = ENABLE_COLLAB ? normalizeMacros(parsed || {}) : parsed;
     MACROS = nextMacros;
-    try { localStorage.setItem(LS_MACROS, JSON.stringify(MACROS)); } catch (storageErr) {}
+    storageSetJSON(LS_MACROS, MACROS);
     try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
     render();
     requestAnimationFrame(() => macrosModal.classList.remove('show'));
@@ -3636,43 +3682,50 @@ window.addEventListener('load', () => {
 
   if (!loadedFromHash){
     if (ENABLE_COLLAB) {
-      try { const savedRoom = localStorage.getItem(key('collab.room.v1')); if (savedRoom) document.getElementById('roomNameInput').value = savedRoom; } catch(e){}
-      try {
-        const rawName = localStorage.getItem(key('name.v1')) || '';
-        const input = document.getElementById('displayNameInput');
-        if (input) input.value = rawName;
-        displayName = rawName.trim();
-        notifyNameChange();
-      } catch(e){}
-      try { if (localStorage.getItem(key('joinwarning.v2')) === '1') joinWarningDismissed = true; } catch(e){}
+      const savedRoom = storageGetItem(key('collab.room.v1'));
+      if (savedRoom) document.getElementById('roomNameInput').value = savedRoom;
+      const rawName = storageGetItem(key('name.v1')) || '';
+      const input = document.getElementById('displayNameInput');
+      if (input) input.value = rawName;
+      displayName = rawName.trim();
+      notifyNameChange();
+      if (storageGetItem(key('joinwarning.v2')) === '1') joinWarningDismissed = true;
     }
-    try { const saved = localStorage.getItem(LS_CONTENT); if (saved != null) editor.value = saved; } catch(e){}
-    try { const dark = localStorage.getItem(LS_DARK) === '1'; if (darkToggle) darkToggle.checked = dark; document.body.classList.toggle('dark', dark); } catch(e){}
-    try { const savedPx = parseFloat(localStorage.getItem(LS_SPLITPX)); if (!Number.isNaN(savedPx)) { leftPane.style.flex = `0 0 ${savedPx}px`; preview.style.flex = '1 1 auto'; } } catch(e){}
-    try { const savedMode = localStorage.getItem(LS_MODE); if (savedMode === 'classic' || savedMode === 'mixed') modeToggle.checked = (savedMode === 'classic'); } catch(e){}
-    try {
-      const raw = localStorage.getItem(LS_MACROS);
-      if (raw) {
-        const obj = JSON.parse(raw);
-        MACROS = normalizeMacros(obj);
-        lastBroadcastMacrosJSON = JSON.stringify(MACROS);
-      }
-    } catch(e){}
-    try {
-      const cursor = parseInt(localStorage.getItem(LS_CURSOR), 10);
-      if (!isNaN(cursor)) {
-        editor.selectionStart = editor.selectionEnd = cursor;
-      }
+    const savedContent = storageGetItem(LS_CONTENT);
+    if (savedContent != null) editor.value = savedContent;
 
-      const scroll = parseInt(localStorage.getItem(LS_SCROLL), 10);
-      if (!isNaN(scroll)) {
-        requestAnimationFrame(() => {
-          editor.scrollTop = scroll;
-          gutter.scrollTop = scroll;
-          overlay.scrollTop = scroll;
-        });
-      }
-    } catch(e) {}
+    const dark = storageGetItem(LS_DARK) === '1';
+    if (darkToggle) darkToggle.checked = dark;
+    document.body.classList.toggle('dark', dark);
+
+    const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
+    if (!Number.isNaN(savedPx)) {
+      const clamped = applySplitWidth(savedPx);
+      if (Number.isFinite(clamped)) storageSetItem(LS_SPLITPX, String(clamped));
+    }
+
+    const savedMode = storageGetItem(LS_MODE);
+    if (savedMode === 'classic' || savedMode === 'mixed') modeToggle.checked = (savedMode === 'classic');
+
+    const savedMacros = storageGetJSON(LS_MACROS);
+    if (savedMacros && typeof savedMacros === 'object') {
+      MACROS = normalizeMacros(savedMacros);
+      lastBroadcastMacrosJSON = JSON.stringify(MACROS);
+    }
+
+    const cursor = parseInt(storageGetItem(LS_CURSOR), 10);
+    if (!Number.isNaN(cursor)) {
+      editor.selectionStart = editor.selectionEnd = cursor;
+    }
+
+    const scroll = parseInt(storageGetItem(LS_SCROLL), 10);
+    if (!Number.isNaN(scroll)) {
+      requestAnimationFrame(() => {
+        editor.scrollTop = scroll;
+        gutter.scrollTop = scroll;
+        overlay.scrollTop = scroll;
+      });
+    }
   }
 
   mode = modeToggle.checked ? 'classic' : 'mixed';
@@ -3687,14 +3740,12 @@ window.addEventListener('load', () => {
   requestAnimationFrame(() => {
     Guides.scheduleRebuild();
     requestAnimationFrame(() => {
-      try {
-        const saved = parseInt(localStorage.getItem(LS_SCROLL), 10);
-        if (!isNaN(saved)) {
-          editor.scrollTop  = saved;
-          gutter.scrollTop  = saved;
-          overlay.scrollTop = saved;
-        }
-      } catch {}
+      const saved = parseInt(storageGetItem(LS_SCROLL), 10);
+      if (!Number.isNaN(saved)) {
+        editor.scrollTop  = saved;
+        gutter.scrollTop  = saved;
+        overlay.scrollTop = saved;
+      }
     });
   });
   editor.focus();

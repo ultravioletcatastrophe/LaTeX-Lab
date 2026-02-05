@@ -3,12 +3,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LaTeX Lab</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
+  <title>{{TITLE}}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>{{FAVICON_EMOJI}}</text></svg>">
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" defer></script>
+
+{{COLLAB_VENDOR_SCRIPTS}}
 
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js" defer></script>
@@ -26,7 +28,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/assets/shared.css">
 </head>
-<body data-collab="false" data-welcome="corner">
+<body{{BODY_CLASS}} data-collab="{{DATA_COLLAB}}" data-welcome="{{DATA_WELCOME}}">
   <div class="toolbar">
     <div class="menu" id="snippetsMenu">
       <button class="menu-button" id="snippetsBtn">🔖 Insert ▾</button>
@@ -36,9 +38,9 @@
         <li id="insertCases">Cases</li>
       </ul>
     </div>
-    <button id="shareBtn" class="menu-button">🔗 Share link</button>
+{{TOOLBAR_BEFORE_MACROS}}
     <button id="macrosBtn" class="menu-button">⚡ Shortcuts</button>
-
+{{TOOLBAR_AFTER_MACROS}}
   </div>
 
   <div class="container">
@@ -71,6 +73,8 @@
         </div>
       </div>
     </div>
+
+{{CENTER_CONTROLS}}
 
     <div class="right-controls">
       <div class="dark-switch" title="Light / Dark">
@@ -156,24 +160,22 @@
     </div>
   </div>
 
+{{JOIN_WARNING_MODAL}}
+
+{{WELCOME_BACKDROP}}
   <div id="welcomePop" class="welcome-pop" role="dialog" aria-modal="false" aria-labelledby="welcomeTitle">
     <div class="welcome-content">
-      <h3 id="welcomeTitle">👋 Welcome to LaTeX Lab</h3>
-      <p>
-        This is an in-browser LaTeX playground with live KaTeX rendering.
-        Type plain text and math, switch between <b>Mixed</b> mode (text + $inline$ / $$display$$ math)
-        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
-        Dark mode and custom shortcuts are supported too.
-      </p>
-      <button id="welcomeClose">Got it</button>
+      <h3 id="welcomeTitle">{{WELCOME_TITLE}}</h3>
+{{WELCOME_CONTENT}}
+      <button id="welcomeClose">{{WELCOME_BUTTON}}</button>
     </div>
   </div>
 
   <script>
     window.LATEX_LAB_CONFIG = {
-      collab: false,
-      shareStateLink: true,
-      storagePrefix: 'latexlab'
+      collab: {{CONFIG_COLLAB}},
+      shareStateLink: {{CONFIG_SHARE_STATE_LINK}},
+      storagePrefix: '{{CONFIG_STORAGE_PREFIX}}'
     };
   </script>
   <script type="module" src="/assets/katex_backend.js"></script>

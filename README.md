@@ -23,6 +23,7 @@ LaTeX Lab is a zero‑setup, in‑browser workspace for typing math and seeing K
 
 ## Repo & Hosting Notes
 - Entry points: `latex_lab_trystero.html` (multiplayer) and `latex_lab.html` (single‑player).
+- Entry pages are generated from `templates/entry-page.template.html` via `node scripts/generate-entry-pages.mjs`.
 - `_redirects` maps `/` to multiplayer and `/local` to single‑player on the hosted site.
 - Runtime code lives in `assets/katex_backend.js`; vendor libs and color data live in `assets/vendor`.
 - Asset paths are absolute (`/assets/...`) for static hosting. If you serve from a sub‑path, adjust paths accordingly.
