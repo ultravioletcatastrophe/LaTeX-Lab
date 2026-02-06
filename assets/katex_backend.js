@@ -8,6 +8,10 @@ const ENABLE_COLLAB_DEBUG = config.enableCollabDebug === true || SEARCH_PARAMS.g
 const STATE_HASH_KEY = 'state';
 const MIN_SPLIT_WIDTH_PX = 240;
 const MAX_SHARE_URL_LENGTH = 12000;
+const MOBILE_LAYOUT_QUERY = '(max-width: 900px)';
+const mobileLayoutMql = (typeof window.matchMedia === 'function')
+  ? window.matchMedia(MOBILE_LAYOUT_QUERY)
+  : null;
 
 const LS_CONTENT = key('content.v6');
 const LS_DARK = key('dark.v6');
@@ -76,6 +80,19 @@ const macrosText = document.getElementById('macrosText');
 const macrosSave = document.getElementById('macrosSave');
 const macrosCancel = document.getElementById('macrosCancel');
 const macrosReset = document.getElementById('macrosReset');
+
+function isMobileLayout(){
+  return !!(mobileLayoutMql && mobileLayoutMql.matches);
+}
+
+function syncDividerForLayout(){
+  if (!divider) return;
+  const mobile = isMobileLayout();
+  divider.setAttribute('aria-hidden', mobile ? 'true' : 'false');
+  divider.setAttribute('aria-orientation', mobile ? 'horizontal' : 'vertical');
+}
+
+syncDividerForLayout();
 
 if (snippetsBtn) {
   snippetsBtn.addEventListener('click', () => snippetsMenu?.classList.toggle('open'));
@@ -337,6 +354,7 @@ function isAtBottom(el, pad = 2){
 }
 
 function clampSplitWidth(rawPx){
+  if (isMobileLayout()) return null;
   const numeric = Number(rawPx);
   if (!Number.isFinite(numeric)) return null;
   const container = document.querySelector('.container');
@@ -346,6 +364,7 @@ function clampSplitWidth(rawPx){
 }
 
 function applySplitWidth(px){
+  if (isMobileLayout()) return null;
   const clamped = clampSplitWidth(px);
   if (!Number.isFinite(clamped)) return null;
   leftPane.style.flex = `0 0 ${clamped}px`;
@@ -359,6 +378,28 @@ let hideSelfCaret = () => {};
 let renderPresenceList = () => {};
 let broadcastCursorPosition = () => {};
 let notifyNameChange = () => {};
+
+function handleMobileLayoutChange(){
+  syncDividerForLayout();
+  if (isMobileLayout()){
+    leftPane.style.flex = '';
+    preview.style.flex = '';
+  } else {
+    const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
+    if (!Number.isNaN(savedPx)) applySplitWidth(savedPx);
+  }
+  Guides.syncOverlayAndMirror();
+  Guides.scheduleRebuild({ force: true });
+  updateAllRemoteCarets();
+}
+
+if (mobileLayoutMql){
+  if (typeof mobileLayoutMql.addEventListener === 'function'){
+    mobileLayoutMql.addEventListener('change', handleMobileLayoutChange);
+  } else if (typeof mobileLayoutMql.addListener === 'function'){
+    mobileLayoutMql.addListener(handleMobileLayoutChange);
+  }
+}
 
 let Collab = {
   join: async () => {},
@@ -1462,13 +1503,21 @@ if (ENABLE_COLLAB) {
       hasCrypto: !!(globalThis.crypto && globalThis.crypto.subtle)
     };
 
+    function preflightStatusText(missing) {
+      const needsSecureCrypto = missing.includes('secure origin') || missing.includes('WebCrypto');
+      if (!needsSecureCrypto) return 'Unavailable: ' + missing.join(', ');
+      if (location.protocol === 'http:') return 'Unavailable: collaboration needs HTTPS (secure origin)';
+      if (location.protocol === 'file:') return 'Unavailable: open via HTTPS/localhost (not file://)';
+      return 'Unavailable: secure context + WebCrypto required';
+    }
+
     function preflightChecks() {
       const missing = [];
       if (!capability.secureContext) missing.push('secure origin');
       if (!capability.hasWebRTC) missing.push('WebRTC');
       if (!capability.hasCrypto) missing.push('WebCrypto');
       if (!missing.length) return true;
-      setStatus('Unavailable: ' + missing.join(', '));
+      setStatus(preflightStatusText(missing));
       setButton('disconnected');
       console.warn('[Collab] Collaboration disabled, missing:', missing);
       return false;
@@ -2850,6 +2899,7 @@ clearBtn?.addEventListener('click', () => {
   }
 
   divider.addEventListener('pointerdown', (e) => {
+    if (isMobileLayout()) return;
     if (e.button !== 0) return;
     pointerId = e.pointerId;
     startX = e.clientX;
@@ -2861,6 +2911,7 @@ clearBtn?.addEventListener('click', () => {
   });
 
   divider.addEventListener('pointermove', (e) => {
+    if (isMobileLayout()) return;
     if (pointerId === null || e.pointerId !== pointerId) return;
     const proposed = clampWidth(startLeft + (e.clientX - startX));
     if (!Number.isFinite(proposed)) return;
@@ -2872,6 +2923,7 @@ clearBtn?.addEventListener('click', () => {
   divider.addEventListener('pointercancel', releasePointer);
 
   divider.addEventListener('dblclick', () => {
+    if (isMobileLayout()) return;
     const cw = container.clientWidth;
     const mid = clampWidth(cw / 2);
     if (Number.isFinite(mid)) {
@@ -2881,6 +2933,7 @@ clearBtn?.addEventListener('click', () => {
   });
 
   function restoreSaved(){
+    if (isMobileLayout()) return;
     const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
     if (!Number.isNaN(savedPx)){
       applyWidth(savedPx);
@@ -3766,6 +3819,7 @@ window.addEventListener('load', () => {
 });
 
 window.addEventListener('resize', () => {
+  syncDividerForLayout();
   Guides.syncOverlayAndMirror();
   Guides.scheduleRebuild({ force: true });
   updateAllRemoteCarets();

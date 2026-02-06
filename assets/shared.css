@@ -126,6 +126,17 @@ body.dark #divider{ color:#bbb }
 /* Preview */
 #preview{ flex:1; padding:1.25rem; overflow:auto; background:var(--bg); color:var(--text); font-size:16px; line-height:1.6; white-space:pre-wrap; min-height:0 }
 
+/* Explicit mobile mode: preview on top, editor on bottom */
+@media (max-width: 900px){
+  .container{ flex-direction:column-reverse; }
+  #leftPane, #preview{ flex:1 1 50%; min-height:0; }
+  #leftPane{ min-width:0; border-right:none; border-top:1px solid var(--border); }
+  #divider{ display:none; }
+  #preview{ padding:1rem; }
+  #editor{ font-size:16px; }
+  #gutter{ width:3.8em; }
+}
+
 /* Consistent tab rendering */
 #editor, #preview { tab-size: 4; -moz-tab-size: 4; }
 
@@ -254,3 +265,8 @@ body[data-welcome="modal"] #joinPop{ max-width: min(420px, calc(100% - 2rem)); }
 .join-pop-option input{ margin:0; }
 .join-pop-actions{ display:flex; gap:.5rem; justify-content:flex-end; }
 .join-pop-actions button{ flex:1 1 auto; }
+
+/* iOS Safari: avoid focus zoom on small text inputs */
+@media (max-width: 900px){
+  .collab-controls input{ font-size:16px; }
+}
