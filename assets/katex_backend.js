@@ -7,6 +7,7 @@ const SEARCH_PARAMS = new URLSearchParams(location.search);
 const ENABLE_COLLAB_DEBUG = config.enableCollabDebug === true || SEARCH_PARAMS.get('collabDebug') === '1';
 const STATE_HASH_KEY = 'state';
 const MIN_SPLIT_WIDTH_PX = 240;
+const MAX_SHARE_URL_LENGTH = 12000;
 
 const LS_CONTENT = key('content.v6');
 const LS_DARK = key('dark.v6');
@@ -2338,12 +2339,19 @@ if (ENABLE_COLLAB) {
 
     if (roomFromUrl && roomFromUrl.trim()) {
       window.addEventListener('load', () => {
+        const roomCode = roomFromUrl.trim();
+        if (roomInput) roomInput.value = roomCode;
         setTimeout(() => {
-          if (!Collab.isConnected()) {
-            roomInput.value = roomFromUrl;
-            roomJoinBtn.click();
-          }
-        }, 500);
+          if (Collab.isConnected()) return;
+
+          const hasSavedLocalDraft = ((storageGetItem(LS_CONTENT) || '').trim().length > 0);
+          const hasLiveEditorDraft = ((editor?.value || '').trim().length > 0);
+          if (hasSavedLocalDraft || hasLiveEditorDraft || shouldSuppressJoinWarning()) return;
+
+          const confirmed = confirm(`Join room "${roomCode}" from this link now?`);
+          if (!confirmed) return;
+          roomJoinBtn.click();
+        }, 650);
       });
     }
 
@@ -2900,7 +2908,6 @@ editor.addEventListener('scroll', () => {
    ===================== */
 editor.addEventListener('input', () => {
   render();
-  updateAllRemoteCarets();
   storageSetItem(LS_CONTENT, editor.value);
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
@@ -3473,12 +3480,16 @@ function encodeStateToUrl(){
   const payload = compressed || b64encode(JSON.stringify(state));
   const shareUrl = new URL(location.href);
   setStateTokenOnUrl(shareUrl, payload);
+  const href = shareUrl.toString();
+  if (href.length > MAX_SHARE_URL_LENGTH){
+    return { ok: false, url: href, reason: 'too_long', length: href.length };
+  }
   if (history.replaceState){
-    history.replaceState(null, '', shareUrl.toString());
+    history.replaceState(null, '', href);
   } else {
     location.hash = shareUrl.hash;
   }
-  return shareUrl.toString();
+  return { ok: true, url: href, length: href.length };
 }
 
 function tryLoadStateFromHash(){
@@ -3509,7 +3520,12 @@ function tryLoadStateFromHash(){
 
 if (SHARE_STATE_LINK && shareBtn) {
   shareBtn.addEventListener('click', async () => {
-    const url = encodeStateToUrl();
+    const result = encodeStateToUrl();
+    if (!result.ok){
+      alert(`Share link is too long (${result.length} characters). Try shortening the document before sharing.`);
+      return;
+    }
+    const url = result.url;
     try {
       await navigator.clipboard.writeText(url);
       shareBtn.textContent = '✅ Copied!';
