@@ -1904,7 +1904,7 @@ if (ENABLE_COLLAB) {
     }
 
     function attachPeerDebug(peerId) {
-      if (!room || debuggedPeers.has(peerId)) return;
+      if (!ENABLE_COLLAB_DEBUG || !room || debuggedPeers.has(peerId)) return;
       const peersMap = room.getPeers?.();
       const entry = peersMap ? peersMap[peerId] : null;
       if (!entry || !entry.connection) return;
@@ -1999,8 +1999,6 @@ if (ENABLE_COLLAB) {
       if (needsRender) {
         render();
         updateAllRemoteCarets();
-      } else if (textChanged) {
-        updateAllRemoteCarets();
       }
     }
 
@@ -2080,7 +2078,7 @@ if (ENABLE_COLLAB) {
     }
 
     function sendPayload(payload) {
-      if (!payload || !sendState || applying) return;
+      if (!payload || !sendState) return;
       if (applying && payload.kind !== 'cursor') return;
       try {
         payload.from = CLIENT_ID;
@@ -2231,7 +2229,7 @@ if (ENABLE_COLLAB) {
         ensurePeerMeta(peerId);
         renderPresenceList();
         updateStatus();
-        attachPeerDebug(peerId);
+        if (ENABLE_COLLAB_DEBUG) attachPeerDebug(peerId);
         evaluateHostElection('peer-join-event');
         scheduleFullSync('peer-join');
         setTimeout(() => broadcastJoinInfo(true), 100);
