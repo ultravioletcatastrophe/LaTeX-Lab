@@ -94,6 +94,72 @@ function syncDividerForLayout(){
 
 syncDividerForLayout();
 
+let mobileTopLockRaf = null;
+let mobileTopLockUntil = 0;
+
+function stopMobileTopLock(){
+  mobileTopLockUntil = 0;
+  if (mobileTopLockRaf !== null){
+    cancelAnimationFrame(mobileTopLockRaf);
+    mobileTopLockRaf = null;
+  }
+}
+
+function keepWindowTopPinned(){
+  if (window.scrollY !== 0) window.scrollTo(0, 0);
+}
+
+function scheduleMobileTopLock(durationMs = 600){
+  if (!isMobileLayout() || !editor) return;
+  keepWindowTopPinned();
+  const now = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now()
+    : Date.now();
+  mobileTopLockUntil = Math.max(mobileTopLockUntil, now + durationMs);
+  if (mobileTopLockRaf !== null) return;
+  const tick = (ts) => {
+    const activeNow = document.activeElement === editor;
+    const nowTs = Number.isFinite(ts) ? ts : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+    keepWindowTopPinned();
+    if (activeNow && isMobileLayout() && nowTs < mobileTopLockUntil){
+      mobileTopLockRaf = requestAnimationFrame(tick);
+      return;
+    }
+    mobileTopLockRaf = null;
+  };
+  mobileTopLockRaf = requestAnimationFrame(tick);
+}
+
+if (editor){
+  editor.addEventListener('focus', () => scheduleMobileTopLock(1200));
+  editor.addEventListener('click', () => scheduleMobileTopLock(700));
+  editor.addEventListener('touchstart', () => {
+    if (!isMobileLayout()) return;
+    try { editor.focus({ preventScroll: true }); } catch(e) {}
+    keepWindowTopPinned();
+    scheduleMobileTopLock(1200);
+  }, { passive: true });
+  editor.addEventListener('blur', stopMobileTopLock);
+}
+
+window.addEventListener('scroll', () => {
+  if (document.activeElement === editor){
+    keepWindowTopPinned();
+    scheduleMobileTopLock(350);
+  }
+}, { passive: true });
+
+if (typeof window !== 'undefined' && window.visualViewport){
+  const handleViewportShift = () => {
+    if (document.activeElement === editor){
+      keepWindowTopPinned();
+      scheduleMobileTopLock(700);
+    }
+  };
+  window.visualViewport.addEventListener('resize', handleViewportShift);
+  window.visualViewport.addEventListener('scroll', handleViewportShift);
+}
+
 if (snippetsBtn) {
   snippetsBtn.addEventListener('click', () => snippetsMenu?.classList.toggle('open'));
 }
@@ -384,7 +450,9 @@ function handleMobileLayoutChange(){
   if (isMobileLayout()){
     leftPane.style.flex = '';
     preview.style.flex = '';
+    if (document.activeElement === editor) scheduleMobileTopLock(700);
   } else {
+    stopMobileTopLock();
     const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
     if (!Number.isNaN(savedPx)) applySplitWidth(savedPx);
   }
@@ -3815,7 +3883,7 @@ window.addEventListener('load', () => {
       }
     });
   });
-  editor.focus();
+  if (!isMobileLayout()) editor.focus();
 });
 
 window.addEventListener('resize', () => {
