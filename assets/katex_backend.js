@@ -2566,7 +2566,7 @@ const Exporter = (() => {
   }
 
   function ff(family, file, weight=400, style='normal'){
-    return `@font-face{font-family:${family};src:url(https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/fonts/${file}.woff2) format("woff2");font-weight:${weight};font-style:${style};font-display:swap;}`;
+    return `@font-face{font-family:${family};src:url(https://cdn.jsdelivr.net/npm/katex@latest/dist/fonts/${file}.woff2) format("woff2");font-weight:${weight};font-style:${style};font-display:swap;}`;
   }
 
   function buildFontFaceStyleEl(){
