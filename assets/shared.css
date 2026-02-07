@@ -302,6 +302,39 @@ body.dark .presence-item.self:hover, body.dark .presence-item.self:focus-visible
 .presence-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:142px; }
 .presence-tone{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; white-space:nowrap; }
 
+@media (max-width: 900px){
+  .presence-list{
+    gap:.35rem;
+    font-size:12px;
+  }
+  .presence-item{
+    gap:.28rem;
+    padding:.22rem .46rem;
+    max-width:145px;
+    box-shadow:0 1px 1px rgba(0,0,0,.08);
+  }
+  .presence-item.self{
+    box-shadow:0 2px 10px rgba(30,167,253,.16);
+  }
+  .presence-item.self:hover, .presence-item.self:focus-visible{
+    box-shadow:0 3px 12px rgba(30,167,253,.2);
+  }
+  .presence-color{
+    width:8px;
+    height:8px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.08);
+  }
+  .presence-main{
+    gap:1px;
+  }
+  .presence-name{
+    max-width:96px;
+  }
+  .presence-tone{
+    display:none;
+  }
+}
+
 /* Mode slider (wide) */
 .switch.mode{ position:relative; width:120px; height:36px; display:inline-block }
 .switch.mode input{ display:none }
@@ -326,8 +359,11 @@ body.dark .switch.dark .thumb{ background:#2a2a2a }
 #darkToggle:checked + .track .thumb{ transform:translate(28px,-50%) }
 
 /* Labels */
-#modeLabel{ font-weight:600; min-width:64px }
+#modeLabel{ display:none }
 #modeDesc{ font-size:12px; opacity:.8 }
+@media (max-width: 900px){
+  #modeDesc{ white-space:pre-line; }
+}
 
 /* Modals */
 .modal-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:9999; }

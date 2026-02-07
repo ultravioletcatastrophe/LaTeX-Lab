@@ -724,6 +724,32 @@ const DEFAULT_MACROS = { "\\abs": "\\left|#1\\right|", "\\norm": "\\left\\lVert#
 let MACROS = { ...DEFAULT_MACROS };
 let lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(MACROS));
 
+function modeDescriptionText(modeValue){
+  const mobile = isMobileLayout();
+  if (modeValue === 'classic'){
+    return mobile
+      ? 'Each new line is rend-\nered as display math.'
+      : 'Each new line is rendered as display math.';
+  }
+  return mobile
+    ? 'Type text with $inline$\nand $$display$$ math.'
+    : 'Type text with $inline$ and $$display$$ math.';
+}
+
+function modePlaceholderText(modeValue){
+  return (modeValue === 'classic')
+    ? 'Type lines of pure TeX; each line renders as display math'
+    : 'Type text with $inline$ and $$display$$ math';
+}
+
+function applyModeUi(modeValue){
+  if (modeLabel) modeLabel.textContent = (modeValue === 'classic') ? 'Classic' : 'Mixed';
+  if (modeDesc) modeDesc.textContent = modeDescriptionText(modeValue);
+  if (editor) editor.placeholder = modePlaceholderText(modeValue);
+  document.body.classList.toggle('mixed', modeValue === 'mixed');
+  document.body.classList.toggle('classic', modeValue === 'classic');
+}
+
 const Guides = (() => {
   const lineHeightCache = new Map();
   const entries = [];
@@ -972,6 +998,7 @@ function handleMobileLayoutChange(){
     const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
     if (!Number.isNaN(savedPx)) applySplitWidth(savedPx);
   }
+  applyModeUi(mode);
   Guides.syncOverlayAndMirror();
   Guides.scheduleRebuild({ force: true });
   updateMobileCursorPad();
@@ -2608,15 +2635,7 @@ if (ENABLE_COLLAB) {
         if (mode !== data.mode) {
           mode = data.mode;
           modeToggle.checked = (mode === 'classic');
-          document.body.classList.toggle('mixed', mode === 'mixed');
-          document.body.classList.toggle('classic', mode === 'classic');
-          modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
-          modeDesc.textContent  = (mode === 'classic') ?
-            'Classic: each new line is rendered as display math.' :
-            'Mixed: type text with $inline$ and $$display$$ math.';
-          editor.placeholder = (mode === 'classic') ?
-            'Type lines of pure TeX; each line renders as display math' :
-            'Type text with $inline$ and $$display$$ math';
+          applyModeUi(mode);
           storageSetItem(LS_MODE, mode);
           needsRender = true;
           stateChanged = true;
@@ -3556,11 +3575,7 @@ editor.addEventListener('input', () => {
 
 modeToggle?.addEventListener('change', () => {
   mode = modeToggle.checked ? 'classic' : 'mixed';
-  modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
-  modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
-  editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
-  document.body.classList.toggle('mixed',   mode === 'mixed');
-  document.body.classList.toggle('classic', mode === 'classic');
+  applyModeUi(mode);
   storageSetItem(LS_MODE, mode);
   render();
   if (!Collab.isApplying()) Collab.sendDelta();
@@ -4153,9 +4168,7 @@ function tryLoadStateFromHash(){
     MACROS = normalizeMacros(st.x);
     storageSetJSON(LS_MACROS, MACROS);
   }
-  modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
-  modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
-  editor.placeholder = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
+  applyModeUi(mode);
   return true;
 }
 
@@ -4384,11 +4397,7 @@ window.addEventListener('load', () => {
   }
 
   mode = modeToggle.checked ? 'classic' : 'mixed';
-  document.body.classList.toggle('mixed',   mode === 'mixed');
-  document.body.classList.toggle('classic', mode === 'classic');
-  modeLabel.textContent = (mode === 'classic') ? 'Classic' : 'Mixed';
-  modeDesc.textContent  = (mode === 'classic') ? 'Classic: each new line is rendered as display math.' : 'Mixed: type text with $inline$ and $$display$$ math.';
-  editor.placeholder    = (mode === 'classic') ? 'Type lines of pure TeX; each line renders as display math' : 'Type text with $inline$ and $$display$$ math';
+  applyModeUi(mode);
   Guides.syncOverlayAndMirror();
   render();
   renderPresenceList();
