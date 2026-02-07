@@ -159,6 +159,40 @@ body.dark #divider{ color:#bbb }
 }
 @media (max-width: 900px){
   .mobile-cursor-pad.show{ display:grid; }
+  #clearBtn{ display:none; }
+
+  body.collab .toolbar{
+    row-gap:.45rem;
+    align-items:center;
+  }
+  body.collab .toolbar .fill{
+    display:none;
+  }
+  body.collab .toolbar .collab-controls{
+    display:contents;
+  }
+  body.collab .toolbar #displayNameInput{
+    order:3;
+    flex:0 0 118px;
+    width:118px;
+    max-width:118px;
+  }
+  body.collab .toolbar #roomNameInput{
+    order:10;
+    flex:1 1 calc(100% - 112px);
+    width:auto;
+    min-width:0;
+  }
+  body.collab .toolbar #roomJoinBtn{
+    order:11;
+    flex:0 0 auto;
+  }
+  body.collab .toolbar #collabStatus{
+    display:none;
+  }
+  body.collab .toolbar #shareRoomBtn{
+    display:none !important;
+  }
 }
 .mobile-cursor-pad-btn{
   border:1px solid var(--border);
