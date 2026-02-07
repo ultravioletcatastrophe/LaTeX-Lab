@@ -138,6 +138,89 @@ body.dark #divider{ color:#bbb }
   #gutter{ width:3.8em; }
 }
 
+/* Mobile cursor pad (appears above keyboard while editing) */
+.mobile-cursor-pad{
+  position:fixed;
+  right:calc(env(safe-area-inset-right) + 10px);
+  left:auto;
+  transform:none;
+  bottom:calc(var(--mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom) + 10px);
+  z-index:9000;
+  display:none;
+  grid-template-columns:42px 42px 42px;
+  grid-template-rows:42px 42px 42px;
+  gap:6px;
+  padding:0;
+  border:none;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  backdrop-filter:none;
+}
+@media (max-width: 900px){
+  .mobile-cursor-pad.show{ display:grid; }
+}
+.mobile-cursor-pad-btn{
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:transparent;
+  color:var(--text);
+  font-size:20px;
+  line-height:1;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+  padding:0;
+  touch-action:none;
+}
+.mobile-cursor-pad-btn:active{
+  transform:translateY(1px);
+}
+.mobile-cursor-pad-btn.dir-up{ grid-column:2; grid-row:1; }
+.mobile-cursor-pad-btn.dir-left{ grid-column:1; grid-row:2; }
+.mobile-cursor-pad-btn.dir-right{ grid-column:3; grid-row:2; }
+.mobile-cursor-pad-btn.dir-down{ grid-column:2; grid-row:3; }
+.mobile-cursor-pad-center{
+  grid-column:2;
+  grid-row:2;
+  border-radius:10px;
+  border:1px dashed transparent;
+  background:transparent;
+}
+
+@media (max-width: 900px){
+  .toolbar,
+  .controls{
+    transition:transform .2s ease, opacity .2s ease;
+  }
+  body.mobile-keyboard-open .toolbar{
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    transform:translateY(calc(-100% - 8px));
+    opacity:0;
+    pointer-events:none;
+    z-index:1200;
+  }
+  body.mobile-keyboard-open .controls{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    transform:translateY(calc(100% + 8px));
+    opacity:0;
+    pointer-events:none;
+    z-index:1200;
+  }
+  body.mobile-keyboard-open #preview{
+    flex:0 0 var(--mobile-preview-lock-height, 46dvh);
+    min-height:140px;
+  }
+  body.mobile-keyboard-open #leftPane{
+    flex:1 1 auto;
+    min-height:0;
+  }
+}
+
 /* Consistent tab rendering */
 #editor, #preview { tab-size: 4; -moz-tab-size: 4; }
 

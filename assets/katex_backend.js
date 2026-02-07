@@ -131,30 +131,228 @@ function scheduleMobileTopLock(durationMs = 600){
 }
 
 if (editor){
-  editor.addEventListener('focus', () => scheduleMobileTopLock(1200));
-  editor.addEventListener('click', () => scheduleMobileTopLock(700));
+  editor.addEventListener('focus', () => scheduleMobileTopLock(450));
+  editor.addEventListener('click', () => scheduleMobileTopLock(220));
   editor.addEventListener('touchstart', () => {
     if (!isMobileLayout()) return;
     try { editor.focus({ preventScroll: true }); } catch(e) {}
     keepWindowTopPinned();
-    scheduleMobileTopLock(1200);
+    scheduleMobileTopLock(450);
   }, { passive: true });
   editor.addEventListener('blur', stopMobileTopLock);
 }
 
-window.addEventListener('scroll', () => {
-  if (document.activeElement === editor){
-    keepWindowTopPinned();
-    scheduleMobileTopLock(350);
+const MOBILE_CURSOR_PAD_KEYBOARD_THRESHOLD = 80;
+let mobileCursorPad = null;
+let mobileCursorPadPreferredColumn = null;
+let mobileCursorPadRepeatDelay = null;
+let mobileCursorPadRepeatTick = null;
+let mobileKeyboardOpenState = false;
+
+function stopMobileCursorPadRepeat(){
+  if (mobileCursorPadRepeatDelay !== null){
+    clearTimeout(mobileCursorPadRepeatDelay);
+    mobileCursorPadRepeatDelay = null;
   }
-}, { passive: true });
+  if (mobileCursorPadRepeatTick !== null){
+    clearInterval(mobileCursorPadRepeatTick);
+    mobileCursorPadRepeatTick = null;
+  }
+}
+
+function getMobileKeyboardInsetPx(){
+  if (typeof window === 'undefined' || !window.visualViewport) return 0;
+  const vv = window.visualViewport;
+  return Math.max(0, Math.round(window.innerHeight - (vv.height + vv.offsetTop)));
+}
+
+function isMobileKeyboardLikelyOpen(){
+  if (typeof window === 'undefined' || !window.visualViewport) return true;
+  return getMobileKeyboardInsetPx() >= MOBILE_CURSOR_PAD_KEYBOARD_THRESHOLD;
+}
+
+function clampCursorIndex(index, max){
+  return Math.max(0, Math.min(max, index));
+}
+
+function collapseSelectionForDirection(start, end, direction){
+  if (start === end) return end;
+  const lo = Math.min(start, end);
+  const hi = Math.max(start, end);
+  if (direction === 'left' || direction === 'up') return lo;
+  return hi;
+}
+
+function lineStartsForText(text){
+  const starts = [0];
+  for (let i = 0; i < text.length; i++){
+    if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  }
+  return starts;
+}
+
+function lineIndexFromCursor(starts, cursor){
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo <= hi){
+    const mid = (lo + hi) >> 1;
+    if (starts[mid] <= cursor) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return Math.max(0, lo - 1);
+}
+
+function lineEndIndex(starts, line, textLength){
+  const nextStart = (line + 1 < starts.length) ? starts[line + 1] : textLength;
+  if (line + 1 < starts.length) return Math.max(starts[line], nextStart - 1);
+  return Math.max(starts[line], nextStart);
+}
+
+function setEditorCursor(index){
+  const target = clampCursorIndex(index, editor.value.length);
+  editor.selectionStart = editor.selectionEnd = target;
+  saveCursorAndScroll();
+  updateSelfCaretCursor();
+  broadcastCursorPosition();
+}
+
+function moveEditorCursor(direction){
+  if (!editor) return;
+  try { editor.focus({ preventScroll: true }); } catch(e) { try { editor.focus(); } catch(_) {} }
+
+  const text = editor.value || '';
+  const textLength = text.length;
+  const start = editor.selectionStart || 0;
+  const end = editor.selectionEnd || 0;
+  let next = collapseSelectionForDirection(start, end, direction);
+
+  if (direction === 'left'){
+    mobileCursorPadPreferredColumn = null;
+    setEditorCursor(Math.max(0, next - 1));
+    return;
+  }
+  if (direction === 'right'){
+    mobileCursorPadPreferredColumn = null;
+    setEditorCursor(Math.min(textLength, next + 1));
+    return;
+  }
+
+  const starts = lineStartsForText(text);
+  const currentLine = lineIndexFromCursor(starts, next);
+  const currentLineStart = starts[currentLine];
+  const currentLineEnd = lineEndIndex(starts, currentLine, textLength);
+  const currentColumn = clampCursorIndex(next - currentLineStart, Math.max(0, currentLineEnd - currentLineStart));
+  if (mobileCursorPadPreferredColumn === null) mobileCursorPadPreferredColumn = currentColumn;
+
+  let targetLine = currentLine;
+  if (direction === 'up') targetLine = Math.max(0, currentLine - 1);
+  if (direction === 'down') targetLine = Math.min(starts.length - 1, currentLine + 1);
+
+  const targetLineStart = starts[targetLine];
+  const targetLineEnd = lineEndIndex(starts, targetLine, textLength);
+  const targetColumn = Math.min(mobileCursorPadPreferredColumn, Math.max(0, targetLineEnd - targetLineStart));
+  setEditorCursor(targetLineStart + targetColumn);
+}
+
+function startMobileCursorPadRepeat(direction){
+  stopMobileCursorPadRepeat();
+  moveEditorCursor(direction);
+  mobileCursorPadRepeatDelay = setTimeout(() => {
+    mobileCursorPadRepeatTick = setInterval(() => moveEditorCursor(direction), 70);
+  }, 240);
+}
+
+function makeCursorPadButton(direction, icon){
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `mobile-cursor-pad-btn dir-${direction}`;
+  button.setAttribute('aria-label', `Move cursor ${direction}`);
+  button.setAttribute('data-direction', direction);
+  button.textContent = icon;
+  button.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    startMobileCursorPadRepeat(direction);
+  });
+  button.addEventListener('pointerup', stopMobileCursorPadRepeat);
+  button.addEventListener('pointercancel', stopMobileCursorPadRepeat);
+  button.addEventListener('pointerleave', stopMobileCursorPadRepeat);
+  button.addEventListener('click', (e) => e.preventDefault());
+  return button;
+}
+
+function ensureMobileCursorPad(){
+  if (mobileCursorPad || !document.body) return;
+  const pad = document.createElement('div');
+  pad.className = 'mobile-cursor-pad';
+  pad.setAttribute('aria-hidden', 'true');
+  pad.appendChild(makeCursorPadButton('up', '↑'));
+  pad.appendChild(makeCursorPadButton('left', '←'));
+  const center = document.createElement('div');
+  center.className = 'mobile-cursor-pad-center';
+  center.setAttribute('aria-hidden', 'true');
+  pad.appendChild(center);
+  pad.appendChild(makeCursorPadButton('right', '→'));
+  pad.appendChild(makeCursorPadButton('down', '↓'));
+  document.body.appendChild(pad);
+  mobileCursorPad = pad;
+}
+
+function updateMobileCursorPad(){
+  if (!editor) return;
+  const keyboardInset = getMobileKeyboardInsetPx();
+  const show = isMobileLayout() && document.activeElement === editor && isMobileKeyboardLikelyOpen();
+  if (show && !mobileKeyboardOpenState && preview){
+    const lockHeight = Math.round(preview.getBoundingClientRect().height || 0);
+    if (lockHeight > 0) {
+      document.body.style.setProperty('--mobile-preview-lock-height', `${lockHeight}px`);
+    }
+  }
+  if (!show && mobileKeyboardOpenState){
+    document.body.style.removeProperty('--mobile-preview-lock-height');
+  }
+  mobileKeyboardOpenState = show;
+  document.body.classList.toggle('mobile-keyboard-open', show);
+  if (mobileCursorPad){
+    mobileCursorPad.style.setProperty('--mobile-keyboard-inset', `${keyboardInset}px`);
+    mobileCursorPad.classList.toggle('show', show);
+    mobileCursorPad.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+  if (!show){
+    mobileCursorPadPreferredColumn = null;
+    stopMobileCursorPadRepeat();
+  }
+}
+
+if (editor){
+  ensureMobileCursorPad();
+  editor.addEventListener('focus', () => {
+    mobileCursorPadPreferredColumn = null;
+    updateMobileCursorPad();
+  });
+  editor.addEventListener('blur', () => {
+    mobileCursorPadPreferredColumn = null;
+    updateMobileCursorPad();
+  });
+  editor.addEventListener('input', () => {
+    mobileCursorPadPreferredColumn = null;
+    updateMobileCursorPad();
+  });
+  editor.addEventListener('click', () => {
+    mobileCursorPadPreferredColumn = null;
+    updateMobileCursorPad();
+  });
+}
+
+window.addEventListener('resize', updateMobileCursorPad, { passive: true });
+window.addEventListener('orientationchange', () => setTimeout(updateMobileCursorPad, 80));
 
 if (typeof window !== 'undefined' && window.visualViewport){
   const handleViewportShift = () => {
-    if (document.activeElement === editor){
+    if (document.activeElement === editor && mobileTopLockRaf !== null){
       keepWindowTopPinned();
-      scheduleMobileTopLock(700);
+      scheduleMobileTopLock(120);
     }
+    updateMobileCursorPad();
   };
   window.visualViewport.addEventListener('resize', handleViewportShift);
   window.visualViewport.addEventListener('scroll', handleViewportShift);
@@ -450,7 +648,7 @@ function handleMobileLayoutChange(){
   if (isMobileLayout()){
     leftPane.style.flex = '';
     preview.style.flex = '';
-    if (document.activeElement === editor) scheduleMobileTopLock(700);
+    if (document.activeElement === editor) scheduleMobileTopLock(250);
   } else {
     stopMobileTopLock();
     const savedPx = parseFloat(storageGetItem(LS_SPLITPX));
@@ -458,6 +656,7 @@ function handleMobileLayoutChange(){
   }
   Guides.syncOverlayAndMirror();
   Guides.scheduleRebuild({ force: true });
+  updateMobileCursorPad();
   updateAllRemoteCarets();
 }
 
