@@ -148,6 +148,8 @@ let mobileCursorPadPreferredColumn = null;
 let mobileCursorPadRepeatDelay = null;
 let mobileCursorPadRepeatTick = null;
 let mobileKeyboardOpenState = false;
+let mobileLockTouchY = null;
+let mobileLockTouchScroller = null;
 
 function stopMobileCursorPadRepeat(){
   if (mobileCursorPadRepeatDelay !== null){
@@ -325,16 +327,104 @@ function updateMobileCursorPad(){
   }
   mobileKeyboardOpenState = show;
   document.body.classList.toggle('mobile-keyboard-open', show);
+  if (show) keepWindowTopPinned();
   if (mobileCursorPad){
     mobileCursorPad.style.setProperty('--mobile-keyboard-inset', `${keyboardInset}px`);
     mobileCursorPad.classList.toggle('show', show);
     mobileCursorPad.setAttribute('aria-hidden', show ? 'false' : 'true');
   }
   if (!show){
+    mobileLockTouchY = null;
+    mobileLockTouchScroller = null;
     mobileCursorPadPreferredColumn = null;
     stopMobileCursorPadRepeat();
   }
 }
+
+function isMobileViewportLockActive(){
+  return !!(editor && mobileKeyboardOpenState && isMobileLayout() && document.activeElement === editor);
+}
+
+function findMobileScrollableContainer(target){
+  if (!(target instanceof Element)) return null;
+  return target.closest('#editor, #overlay, #gutter, #preview');
+}
+
+function canElementScrollByDelta(el, scrollDelta){
+  if (!el || !Number.isFinite(scrollDelta)) return false;
+  const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  if (maxTop <= 1) return false;
+  if (scrollDelta > 0) return el.scrollTop < (maxTop - 1);
+  if (scrollDelta < 0) return el.scrollTop > 1;
+  return true;
+}
+
+function handleMobileViewportTouchStart(event){
+  if (!isMobileViewportLockActive()){
+    mobileLockTouchY = null;
+    mobileLockTouchScroller = null;
+    return;
+  }
+  if (!event.touches || event.touches.length !== 1){
+    mobileLockTouchY = null;
+    mobileLockTouchScroller = null;
+    return;
+  }
+  mobileLockTouchY = event.touches[0].clientY;
+  mobileLockTouchScroller = findMobileScrollableContainer(event.target);
+}
+
+function handleMobileViewportTouchMove(event){
+  if (!isMobileViewportLockActive()){
+    mobileLockTouchY = null;
+    mobileLockTouchScroller = null;
+    return;
+  }
+  if (!event.touches || event.touches.length !== 1){
+    return;
+  }
+  const nextY = event.touches[0].clientY;
+  if (!Number.isFinite(mobileLockTouchY)){
+    mobileLockTouchY = nextY;
+    mobileLockTouchScroller = findMobileScrollableContainer(event.target);
+    return;
+  }
+  const touchDeltaY = nextY - mobileLockTouchY;
+  mobileLockTouchY = nextY;
+  const scrollDelta = -touchDeltaY;
+  if (Math.abs(scrollDelta) < 0.75) return;
+
+  const scroller = mobileLockTouchScroller || findMobileScrollableContainer(event.target);
+  if (canElementScrollByDelta(scroller, scrollDelta)) return;
+
+  event.preventDefault();
+  keepWindowTopPinned();
+}
+
+function clearMobileViewportTouchLock(){
+  mobileLockTouchY = null;
+  mobileLockTouchScroller = null;
+}
+
+function handleMobileViewportWheel(event){
+  if (!isMobileViewportLockActive()) return;
+  const scroller = findMobileScrollableContainer(event.target);
+  if (canElementScrollByDelta(scroller, event.deltaY)) return;
+  event.preventDefault();
+  keepWindowTopPinned();
+}
+
+function handleMobileViewportScroll(){
+  if (!isMobileViewportLockActive()) return;
+  keepWindowTopPinned();
+}
+
+document.addEventListener('touchstart', handleMobileViewportTouchStart, { passive: true, capture: true });
+document.addEventListener('touchmove', handleMobileViewportTouchMove, { passive: false, capture: true });
+document.addEventListener('touchend', clearMobileViewportTouchLock, { passive: true, capture: true });
+document.addEventListener('touchcancel', clearMobileViewportTouchLock, { passive: true, capture: true });
+window.addEventListener('wheel', handleMobileViewportWheel, { passive: false, capture: true });
+window.addEventListener('scroll', handleMobileViewportScroll, { passive: true });
 
 if (editor){
   ensureMobileCursorPad();
