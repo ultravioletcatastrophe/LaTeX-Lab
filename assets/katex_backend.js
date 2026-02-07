@@ -1004,7 +1004,9 @@ let joinWarningDismissed = false;
 
 function render(){
   const hadExistingPreviewContent = preview.childNodes.length > 0;
-  const stickToBottom = hadExistingPreviewContent && isAtBottom(preview);
+  const stickToBottom = isMobileLayout()
+    ? (hadExistingPreviewContent && isAtBottom(preview))
+    : isAtBottom(preview);
   preview.innerHTML = '';
   const lines = editor.value.split('\n');
   if (mode === 'classic'){
@@ -4370,6 +4372,15 @@ window.addEventListener('load', () => {
     if (!Number.isNaN(cursor)) {
       editor.selectionStart = editor.selectionEnd = cursor;
     }
+
+    const scroll = parseInt(storageGetItem(LS_SCROLL), 10);
+    if (!Number.isNaN(scroll) && !isMobileLayout()) {
+      requestAnimationFrame(() => {
+        editor.scrollTop = scroll;
+        gutter.scrollTop = scroll;
+        overlay.scrollTop = scroll;
+      });
+    }
   }
 
   mode = modeToggle.checked ? 'classic' : 'mixed';
@@ -4384,10 +4395,19 @@ window.addEventListener('load', () => {
   requestAnimationFrame(() => {
     Guides.scheduleRebuild();
     requestAnimationFrame(() => {
-      editor.scrollTop  = 0;
-      gutter.scrollTop  = 0;
-      overlay.scrollTop = 0;
-      preview.scrollTop = 0;
+      if (isMobileLayout()) {
+        editor.scrollTop  = 0;
+        gutter.scrollTop  = 0;
+        overlay.scrollTop = 0;
+        preview.scrollTop = 0;
+        return;
+      }
+      const saved = parseInt(storageGetItem(LS_SCROLL), 10);
+      if (!Number.isNaN(saved)) {
+        editor.scrollTop  = saved;
+        gutter.scrollTop  = saved;
+        overlay.scrollTop = saved;
+      }
     });
   });
   if (!isMobileLayout()) editor.focus();
