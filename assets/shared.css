@@ -263,6 +263,31 @@ body.dark #divider{ color:#bbb }
 .left-controls,.right-controls{ display:flex; align-items:center; gap:1rem }
 .center-controls{ flex:1; display:flex; justify-content:center; min-width:0; }
 
+@media (max-width: 900px){
+  .controls{
+    min-height:auto;
+    align-items:flex-start;
+    padding:.5rem 1rem .75rem;
+  }
+  .left-controls{
+    align-items:flex-start;
+  }
+  .right-controls{
+    margin-left:auto;
+    flex-direction:column;
+    align-items:flex-end;
+    align-self:flex-start;
+    justify-content:flex-start;
+    gap:.45rem;
+  }
+  .right-controls .dark-switch{
+    order:1;
+  }
+  .right-controls #pngBtn{
+    order:2;
+  }
+}
+
 /* Presence list (collab) */
 .presence-list{ display:flex; align-items:center; justify-content:center; gap:.65rem; flex-wrap:wrap; font-size:13px; color:var(--text); max-width:100%; }
 .presence-item{ display:flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,.9); box-shadow:0 1px 2px rgba(0,0,0,.08); max-width:200px; transition:background .18s,border-color .18s,box-shadow .18s; }
