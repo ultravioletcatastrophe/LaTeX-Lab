@@ -173,9 +173,10 @@ body.dark #divider{ color:#bbb }
   }
   body.collab .toolbar #displayNameInput{
     order:3;
-    flex:0 0 118px;
-    width:118px;
-    max-width:118px;
+    flex:1 1 140px;
+    width:auto;
+    min-width:110px;
+    max-width:none;
   }
   body.collab .toolbar #roomNameInput{
     order:10;
