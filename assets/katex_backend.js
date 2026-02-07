@@ -887,6 +887,80 @@ let renderPresenceList = () => {};
 let broadcastCursorPosition = () => {};
 let notifyNameChange = () => {};
 
+if (!ENABLE_COLLAB){
+  const MOBILE_SELF_CARET_BLUE = '#007AFF';
+  let mobileSelfCaretEl = null;
+  let mobileSelfCaretBar = null;
+
+  function ensureMobileSelfCaret(){
+    if (mobileSelfCaretEl) return;
+    if (!editorWrap) return;
+    mobileSelfCaretEl = document.createElement('div');
+    mobileSelfCaretEl.className = 'mobile-self-caret';
+    mobileSelfCaretEl.setAttribute('aria-hidden', 'true');
+    mobileSelfCaretBar = document.createElement('div');
+    mobileSelfCaretBar.className = 'mobile-self-caret-bar';
+    mobileSelfCaretBar.style.backgroundColor = MOBILE_SELF_CARET_BLUE;
+    mobileSelfCaretEl.appendChild(mobileSelfCaretBar);
+    editorWrap.appendChild(mobileSelfCaretEl);
+  }
+
+  hideSelfCaret = () => {
+    if (editor) editor.style.caretColor = '';
+    if (mobileSelfCaretEl) mobileSelfCaretEl.style.display = 'none';
+  };
+
+  updateSelfCaretCursor = () => {
+    if (!editor) return;
+    if (!isMobileLayout() || document.activeElement !== editor){
+      hideSelfCaret();
+      return;
+    }
+    ensureMobileSelfCaret();
+    if (!mobileSelfCaretEl || !mobileSelfCaretBar){
+      hideSelfCaret();
+      return;
+    }
+
+    editor.style.caretColor = 'transparent';
+    const cursor = editor.selectionEnd || editor.selectionStart || 0;
+    const coords = getEditorCaretCoordinates(cursor);
+    if (!coords){
+      mobileSelfCaretEl.style.display = 'none';
+      return;
+    }
+
+    const { x, y, height } = coords;
+    if (y < -height || y > editor.clientHeight + height || x < -32 || x > editor.clientWidth + 32){
+      mobileSelfCaretEl.style.display = 'none';
+      return;
+    }
+
+    const barHeight = Math.max(height * 0.82, 1);
+    mobileSelfCaretEl.style.display = 'block';
+    mobileSelfCaretEl.style.top = `${Math.round(y)}px`;
+    mobileSelfCaretEl.style.left = `${Math.round(x)}px`;
+    mobileSelfCaretEl.style.height = `${barHeight}px`;
+    mobileSelfCaretEl.style.width = '2px';
+    mobileSelfCaretBar.style.height = `${barHeight}px`;
+    mobileSelfCaretBar.style.width = '2px';
+  };
+
+  updateAllRemoteCarets = () => {
+    updateSelfCaretCursor();
+  };
+  broadcastCursorPosition = () => {
+    updateSelfCaretCursor();
+  };
+
+  editor?.addEventListener('focus', updateSelfCaretCursor);
+  editor?.addEventListener('blur', hideSelfCaret);
+  editor?.addEventListener('select', updateSelfCaretCursor);
+  editor?.addEventListener('keyup', updateSelfCaretCursor);
+  editor?.addEventListener('mouseup', updateSelfCaretCursor);
+  editor?.addEventListener('scroll', updateSelfCaretCursor);
+}
+
 function handleMobileLayoutChange(){
   syncDividerForLayout();
   if (isMobileLayout()){
