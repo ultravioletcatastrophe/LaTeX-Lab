@@ -430,8 +430,8 @@ body.mixed #preview { font-family: "CMU Serif"; font-weight: 500; font-size:20px
 /* Collab-specific layering */
 body.collab #leftPane { position: relative; }
 body.collab #gutter { position: relative; z-index: 1; }
-body.collab #editorWrap { position: relative; z-index: 2; overflow: visible; }
-body.collab #remoteLayer { overflow: visible; pointer-events: none; }
+body.collab #editorWrap { position: relative; z-index: 2; overflow: hidden; }
+body.collab #remoteLayer { overflow: hidden; pointer-events: none; }
 
 /* =====================
    Welcome pop styles
