@@ -150,6 +150,7 @@ let mobileCursorPadRepeatTick = null;
 let mobileKeyboardOpenState = false;
 let mobileLockTouchY = null;
 let mobileLockTouchScroller = null;
+let mobileEditorEndPadPx = -1;
 
 function stopMobileCursorPadRepeat(){
   if (mobileCursorPadRepeatDelay !== null){
@@ -291,8 +292,37 @@ function getEditorLineHeightPx(){
   return Math.max(1, lineHeight);
 }
 
+function setMobileEditorEndPad(px){
+  if (!editor) return;
+  const next = Math.max(0, Math.round(px));
+  if (next === mobileEditorEndPadPx) return;
+  mobileEditorEndPadPx = next;
+  editor.style.setProperty('--mobile-editor-end-pad', `${next}px`);
+  const editorStyle = getComputedStyle(editor);
+  const syncedBottom = editorStyle.paddingBottom;
+  if (gutter) gutter.style.paddingBottom = syncedBottom;
+  if (overlay) overlay.style.paddingBottom = syncedBottom;
+}
+
+function updateMobileEditorEndPad(){
+  if (!editor) return;
+  const shouldPad = isMobileLayout()
+    && document.activeElement === editor
+    && isMobileKeyboardLikelyOpen();
+  if (!shouldPad){
+    setMobileEditorEndPad(0);
+    return;
+  }
+  const viewportHeight = Math.max(0, editor.clientHeight);
+  const lineHeight = getEditorLineHeightPx();
+  // Reserve enough trailing space so final lines can still align near the top anchor.
+  const trailingPad = Math.max(0, viewportHeight - (lineHeight * 2));
+  setMobileEditorEndPad(trailingPad);
+}
+
 function alignMobileEditorViewportToCursor(cursorIndex){
   if (!editor || !isMobileLayout()) return;
+  updateMobileEditorEndPad();
   const caret = getEditorCaretCoordinates(cursorIndex);
   if (!caret || !Number.isFinite(caret.y)) return;
 
@@ -431,6 +461,7 @@ function updateMobileCursorPad(){
   mobileKeyboardOpenState = show;
   document.body.classList.toggle('mobile-keyboard-open', show);
   if (show) keepWindowTopPinned();
+  updateMobileEditorEndPad();
   if (mobileCursorPad){
     mobileCursorPad.style.setProperty('--mobile-keyboard-inset', `${keyboardInset}px`);
     mobileCursorPad.classList.toggle('show', show);

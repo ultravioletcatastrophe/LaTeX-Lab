@@ -81,7 +81,7 @@ body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1
 .container{ flex:1; display:flex; min-height:0; overflow:hidden }
 #leftPane{ flex:0 0 50%; display:flex; min-width:260px; border-right:1px solid var(--border); min-height:0 }
 #gutter{
-  width:4.8em; padding-top:.6em; padding-bottom:.6em; background:var(--gutter-bg); color:var(--gutter-text);
+  width:4.8em; padding-top:.6em; padding-bottom:calc(.6em + var(--mobile-editor-end-pad, 0px)); background:var(--gutter-bg); color:var(--gutter-text);
   font-family:monospace; font-size:15px; text-align:right; user-select:none; overflow:auto; pointer-events:none;
   scrollbar-width: none;
 }
@@ -100,7 +100,7 @@ body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1
 #overlay .overlay-line{ width:100%; }
 #overlay .wrap-row{ width:100%; }
 #editor{
-  position:relative; width:100%; height:100%; padding:.6em 1em .6em 1em; font-family:monospace; font-size:15px; line-height:1.5;
+  position:relative; width:100%; height:100%; padding:.6em 1em calc(.6em + var(--mobile-editor-end-pad, 0px)) 1em; font-family:monospace; font-size:15px; line-height:1.5;
   border:none; outline:none; background:transparent; color:var(--text); resize:none; overflow:auto;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
