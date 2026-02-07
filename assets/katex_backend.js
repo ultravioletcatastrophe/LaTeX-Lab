@@ -5,6 +5,7 @@ const STORAGE_PREFIX = config.storagePrefix || (ENABLE_COLLAB ? 'latexlab.tryste
 const key = (suffix) => `${STORAGE_PREFIX}.${suffix}`;
 const SEARCH_PARAMS = new URLSearchParams(location.search);
 const ENABLE_COLLAB_DEBUG = config.enableCollabDebug === true || SEARCH_PARAMS.get('collabDebug') === '1';
+const INITIAL_ROOM_FROM_URL = (SEARCH_PARAMS.get('room') || '').trim();
 const STATE_HASH_KEY = 'state';
 const MIN_SPLIT_WIDTH_PX = 240;
 const MAX_SHARE_URL_LENGTH = 12000;
@@ -660,9 +661,11 @@ function indexToLineNumber(source, index){
 }
 function extractMacros(source){
   const macros = {};
-  const matchedPositions = new Set();
+  const parsedCommandRanges = [];
   const errors = [];
   const head = /(\\(?:re)?newcommand)\s*\{\s*(\\[A-Za-z@]+)\s*\}\s*(?:\[\s*(\d+)\s*\])?\s*\{/g;
+  const isInsideParsedCommand = (index) => parsedCommandRanges
+    .some(([start, end]) => index >= start && index < end);
   let lastBodyEnd = 0;
   let match;
   while ((match = head.exec(source)) !== null){
@@ -678,13 +681,13 @@ function extractMacros(source){
     }
     if (depth !== 0){
       errors.push({ index: match.index, reason: 'Unmatched braces' });
-      matchedPositions.add(match.index);
+      parsedCommandRanges.push([match.index, source.length]);
       lastBodyEnd = bodyStart;
       break;
     }
     const body = source.slice(bodyStart, i - 1).trim();
     macros[name] = body;
-    matchedPositions.add(match.index);
+    parsedCommandRanges.push([match.index, i]);
     head.lastIndex = i;
     lastBodyEnd = i;
   }
@@ -692,7 +695,7 @@ function extractMacros(source){
   const commandRegex = /\\(?:re)?newcommand/g;
   let cmd;
   while ((cmd = commandRegex.exec(source)) !== null){
-    if (!matchedPositions.has(cmd.index)){
+    if (!isInsideParsedCommand(cmd.index)){
       errors.push({ index: cmd.index, reason: 'Could not parse command' });
     }
   }
@@ -2990,8 +2993,7 @@ if (ENABLE_COLLAB) {
   const shareRoomBtn = document.getElementById('shareRoomBtn');
 
   (function setupUrlRoomParser() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomFromUrl = urlParams.get('room');
+    const roomFromUrl = INITIAL_ROOM_FROM_URL;
 
     if (roomFromUrl && roomFromUrl.trim()) {
       window.addEventListener('load', () => {
@@ -3192,17 +3194,30 @@ function clampInt(v, min, max){
   return Math.max(min, Math.min(max, isNaN(v) ? min : v));
 }
 
+function syncEditorMutation(options = {}){
+  const deltaFirst = options.deltaFirst === true;
+  render();
+  updateAllRemoteCarets();
+  storageSetItem(LS_CONTENT, editor.value);
+  const sendDeltaIfNeeded = () => {
+    if (!Collab.isApplying()) Collab.sendDelta();
+  };
+  if (deltaFirst){
+    sendDeltaIfNeeded();
+    broadcastCursorPosition();
+    return;
+  }
+  broadcastCursorPosition();
+  sendDeltaIfNeeded();
+}
+
 function insertAtCursor(text){
   const el = editor;
   const start = el.selectionStart, end = el.selectionEnd;
   el.value = el.value.slice(0, start) + text + el.value.slice(end);
   el.selectionStart = el.selectionEnd = start + text.length;
   el.focus();
-  render();
-  updateAllRemoteCarets();
-  storageSetItem(LS_CONTENT, el.value);
-  if (!Collab.isApplying()) Collab.sendDelta();
-  broadcastCursorPosition();
+  syncEditorMutation({ deltaFirst: true });
 }
 
 /* =====================
@@ -3613,11 +3628,7 @@ editor.addEventListener('keydown', (e) => {
     const re = /^ {1,2}/gm; const before = val.slice(lineStart, end); const block = before.replace(re, ''); const removed = (before.match(re) || []).reduce((a,s)=>a+s.length,0);
     editor.setRangeText(block, lineStart, end, 'end'); editor.selectionStart = Math.max(lineStart, start - Math.min(2, removed)); editor.selectionEnd = Math.max(lineStart, end - removed);
   }
-  render();
-  updateAllRemoteCarets();
-  storageSetItem(LS_CONTENT, editor.value);
-  broadcastCursorPosition();
-  if (!Collab.isApplying()) Collab.sendDelta();
+  syncEditorMutation();
 });
 
 /* =====================
@@ -3639,11 +3650,7 @@ editor.addEventListener('keydown', (e) => {
         e.preventDefault();
         editor.value = val.slice(0, left) + val.slice(right);
         editor.selectionStart = editor.selectionEnd = left;
-        render();
-        updateAllRemoteCarets();
-        storageSetItem(LS_CONTENT, editor.value);
-        if (!Collab.isApplying()) Collab.sendDelta();
-        broadcastCursorPosition();
+        syncEditorMutation({ deltaFirst: true });
         return;
       }
     }
@@ -3682,11 +3689,7 @@ editor.addEventListener('keydown', (e) => {
       editor.selectionStart = editor.selectionEnd = start + pair.length;
     }
 
-    render();
-    updateAllRemoteCarets();
-    storageSetItem(LS_CONTENT, editor.value);
-    if (!Collab.isApplying()) Collab.sendDelta();
-    broadcastCursorPosition();
+    syncEditorMutation({ deltaFirst: true });
     return;
   }
 
@@ -3697,11 +3700,7 @@ editor.addEventListener('keydown', (e) => {
     editor.value = before + open + selected + close + after;
     if (hasSel) { editor.selectionStart = start + 1; editor.selectionEnd = end + 1; }
     else { editor.selectionStart = editor.selectionEnd = start + 1; }
-    render();
-    updateAllRemoteCarets();
-    storageSetItem(LS_CONTENT, editor.value);
-    if (!Collab.isApplying()) Collab.sendDelta();
-    broadcastCursorPosition();
+    syncEditorMutation({ deltaFirst: true });
     return;
   }
 });
@@ -4326,7 +4325,7 @@ macrosSave?.addEventListener('click', (e) => {
       alert(`Could not parse \\newcommand on line ${first.line}: ${first.reason}.`);
       return;
     }
-    const nextMacros = ENABLE_COLLAB ? normalizeMacros(parsed || {}) : parsed;
+    const nextMacros = normalizeMacros(parsed || {});
     MACROS = nextMacros;
     storageSetJSON(LS_MACROS, MACROS);
     try { macrosText.value = serializeMacros(MACROS); } catch (serr) {}
@@ -4350,8 +4349,10 @@ window.addEventListener('load', () => {
 
   if (!loadedFromHash){
     if (ENABLE_COLLAB) {
-      const savedRoom = storageGetItem(key('collab.room.v1'));
-      if (savedRoom) document.getElementById('roomNameInput').value = savedRoom;
+      if (!INITIAL_ROOM_FROM_URL){
+        const savedRoom = storageGetItem(key('collab.room.v1'));
+        if (savedRoom) document.getElementById('roomNameInput').value = savedRoom;
+      }
       const rawName = storageGetItem(key('name.v1')) || '';
       const input = document.getElementById('displayNameInput');
       if (input) input.value = rawName;
