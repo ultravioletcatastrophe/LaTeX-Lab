@@ -578,6 +578,13 @@ if (editor){
     mobileCursorPadPreferredColumn = null;
     updateMobileCursorPad();
   });
+  editor.addEventListener('input', (event) => {
+    if (!isMobileLayout()) return;
+    const type = event && typeof event.inputType === 'string' ? event.inputType : '';
+    if (type !== 'insertLineBreak' && type !== 'insertParagraph') return;
+    const cursor = editor.selectionEnd || editor.selectionStart || 0;
+    requestAnimationFrame(() => alignMobileEditorViewportToCursor(cursor));
+  });
 }
 
 window.addEventListener('resize', updateMobileCursorPad, { passive: true });
