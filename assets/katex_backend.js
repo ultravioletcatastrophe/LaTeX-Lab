@@ -280,6 +280,16 @@ function makeCursorPadButton(direction, icon){
   return button;
 }
 
+function handleMobileCursorPadDeadZone(event){
+  if (!editor) return;
+  const target = event.target;
+  const isButton = target instanceof Element && !!target.closest('.mobile-cursor-pad-btn');
+  if (isButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  try { editor.focus({ preventScroll: true }); } catch(e) { try { editor.focus(); } catch(_) {} }
+}
+
 function ensureMobileCursorPad(){
   if (mobileCursorPad || !document.body) return;
   const pad = document.createElement('div');
@@ -293,6 +303,9 @@ function ensureMobileCursorPad(){
   pad.appendChild(center);
   pad.appendChild(makeCursorPadButton('right', '→'));
   pad.appendChild(makeCursorPadButton('down', '↓'));
+  pad.addEventListener('pointerdown', handleMobileCursorPadDeadZone);
+  pad.addEventListener('click', handleMobileCursorPadDeadZone);
+  pad.addEventListener('touchstart', handleMobileCursorPadDeadZone, { passive: false });
   document.body.appendChild(pad);
   mobileCursorPad = pad;
 }
