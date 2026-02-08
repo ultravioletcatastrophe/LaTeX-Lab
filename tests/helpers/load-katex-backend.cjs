@@ -126,8 +126,24 @@ class FakeElement {
     this.scrollHeight = 1000;
     this.clientHeight = 400;
     this.clientWidth = 600;
-    this.textContent = '';
-    this.innerHTML = '';
+    this._textContent = '';
+    this._innerHTML = '';
+    Object.defineProperty(this, 'textContent', {
+      get: () => this._textContent,
+      set: (value) => {
+        this._textContent = String(value);
+        this._innerHTML = this._textContent;
+        this.children = [];
+      }
+    });
+    Object.defineProperty(this, 'innerHTML', {
+      get: () => this._innerHTML,
+      set: (value) => {
+        this._innerHTML = String(value);
+        this._textContent = '';
+        this.children = [];
+      }
+    });
     this.disabled = false;
     this.hidden = false;
     this.nodeType = 1;
@@ -141,6 +157,8 @@ class FakeElement {
     if (node && typeof node === 'object') {
       node.parentElement = this;
     }
+    this._textContent = '';
+    this._innerHTML = '';
     this.children.push(node);
     return node;
   }
@@ -153,6 +171,8 @@ class FakeElement {
   }
 
   replaceChildren(...nodes) {
+    this._textContent = '';
+    this._innerHTML = '';
     this.children = [];
     nodes.forEach(node => this.appendChild(node));
   }
@@ -316,7 +336,10 @@ function loadBackend(options = {}) {
     href = 'https://example.test/latex_lab.html',
     localStorageData = {},
     mobile = false,
-    confirmResult = true
+    confirmResult = true,
+    katexRenderImpl = null,
+    renderMathInElementImpl = null,
+    testJoinRoom = null
   } = options;
 
   const parsedHref = new URL(href);
@@ -349,6 +372,9 @@ function loadBackend(options = {}) {
   const alerts = [];
   const confirms = [];
   const prompts = [];
+  const katexRenderCalls = [];
+  const renderMathCalls = [];
+  const clipboardWrites = [];
 
   const document = attachEventTarget({
     readyState: 'complete',
@@ -416,7 +442,13 @@ function loadBackend(options = {}) {
     sessionStorage: localStorage,
     location,
     history: { replaceState() {} },
-    navigator: { clipboard: { writeText: async () => {} } },
+    navigator: {
+      clipboard: {
+        writeText: async (value) => {
+          clipboardWrites.push(String(value));
+        }
+      }
+    },
     URL,
     URLSearchParams,
     TextEncoder,
@@ -440,8 +472,20 @@ function loadBackend(options = {}) {
     clearInterval: () => {},
     matchMedia: () => mql,
     getComputedStyle: (element) => createComputedStyle(element),
-    katex: { render() {} },
-    renderMathInElement: () => {},
+    katex: {
+      render: (...args) => {
+        katexRenderCalls.push(args);
+        if (typeof katexRenderImpl === 'function') {
+          return katexRenderImpl(...args);
+        }
+      }
+    },
+    renderMathInElement: (...args) => {
+      renderMathCalls.push(args);
+      if (typeof renderMathInElementImpl === 'function') {
+        return renderMathInElementImpl(...args);
+      }
+    },
     html2canvas: async () => ({
       toBlob(callback) {
         callback(new Blob([Buffer.from('png')], { type: 'image/png' }));
@@ -467,6 +511,7 @@ function loadBackend(options = {}) {
     visualViewport,
     scrollY: 0,
     scrollTo: (_x, y) => { context.scrollY = Number(y) || 0; },
+    __LATEX_LAB_TEST_JOIN_ROOM__: (typeof testJoinRoom === 'function') ? testJoinRoom : null,
     LATEX_LAB_CONFIG: {
       collab,
       shareStateLink,
@@ -508,8 +553,47 @@ function loadBackend(options = {}) {
   normalizeStateToken,
   getStateTokenFromHash,
   setStateTokenOnUrl,
+  render,
+  setMode: (nextMode) => {
+    const value = (nextMode === 'classic') ? 'classic' : 'mixed';
+    mode = value;
+    if (modeToggle) modeToggle.checked = (value === 'classic');
+    applyModeUi(value);
+  },
+  getMode: () => mode,
   getStorageKey: (suffix) => key(suffix),
+  getStorageValue: (suffix) => storageGetItem(key(suffix)),
+  setEditorValue: (value) => { if (editor) editor.value = String(value); },
+  getEditorValue: () => editor ? editor.value : '',
+  setEditorSelection: (start, end = start) => {
+    if (!editor) return;
+    editor.selectionStart = Number(start) || 0;
+    editor.selectionEnd = Number(end) || 0;
+  },
+  getEditorSelection: () => {
+    if (!editor) return { start: 0, end: 0 };
+    return { start: editor.selectionStart || 0, end: editor.selectionEnd || 0 };
+  },
+  setEditorScrollTop: (value) => {
+    if (editor) editor.scrollTop = Number(value) || 0;
+  },
+  setPreviewScrollTop: (value) => {
+    if (preview) preview.scrollTop = Number(value) || 0;
+  },
+  getPreviewScrollTop: () => preview ? preview.scrollTop : 0,
+  getPreviewChildCount: () => preview ? preview.childNodes.length : 0,
+  getPreviewNodeIds: () => preview ? Array.from(preview.childNodes || []).map(node => node.id || '').filter(Boolean) : [],
+  getPreviewTexts: () => preview ? Array.from(preview.childNodes || []).map(node => String(node.textContent || '')) : [],
+  collabJoin: (name) => Collab.join(name),
+  collabLeave: () => Collab.leave(),
+  collabIsConnected: () => Collab.isConnected(),
+  collabHostInfo: () => (Collab.debug && typeof Collab.debug.getHostInfo === 'function') ? Collab.debug.getHostInfo() : null,
+  collabStatusText: () => {
+    const status = document.getElementById('collabStatus');
+    return status ? String(status.textContent || '') : '';
+  },
   getMACROS: () => MACROS,
+  setMACROS: (next) => { MACROS = normalizeMacros(next || {}); },
   setMacrosText: (value) => { if (macrosText) macrosText.value = String(value); },
   triggerMacrosSave: () => { if (macrosSave && typeof macrosSave.click === 'function') macrosSave.click(); },
   getRoomInputValue: () => {
@@ -531,6 +615,9 @@ function loadBackend(options = {}) {
     alerts,
     confirms,
     prompts,
+    katexRenderCalls,
+    renderMathCalls,
+    clipboardWrites,
     storage,
     runWindowEvent(type, event = {}) {
       return context.dispatchEvent({ ...event, type });

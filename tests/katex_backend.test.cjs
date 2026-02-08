@@ -4,6 +4,96 @@ const { loadBackend } = require('./helpers/load-katex-backend.cjs');
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value));
 
+function createFakeRoom(initialPeers = {}) {
+  const peers = { ...initialPeers };
+  const sent = [];
+  let onStateHandler = null;
+  let onJoinHandler = null;
+  let onLeaveHandler = null;
+
+  return {
+    sent,
+    leaveCalled: false,
+    makeAction() {
+      return [
+        (payload) => sent.push(toPlain(payload)),
+        (handler) => {
+          onStateHandler = handler;
+          return () => {
+            if (onStateHandler === handler) onStateHandler = null;
+          };
+        }
+      ];
+    },
+    onPeerJoin(handler) {
+      onJoinHandler = handler;
+      return () => {
+        if (onJoinHandler === handler) onJoinHandler = null;
+      };
+    },
+    onPeerLeave(handler) {
+      onLeaveHandler = handler;
+      return () => {
+        if (onLeaveHandler === handler) onLeaveHandler = null;
+      };
+    },
+    getPeers() {
+      return { ...peers };
+    },
+    leave() {
+      this.leaveCalled = true;
+    },
+    emitState(payload, peerId = payload?.from) {
+      if (typeof onStateHandler === 'function') onStateHandler(payload, peerId);
+    },
+    emitJoin(peerId, peerInfo = {}) {
+      peers[String(peerId)] = peerInfo;
+      if (typeof onJoinHandler === 'function') onJoinHandler(String(peerId));
+    },
+    emitLeave(peerId) {
+      delete peers[String(peerId)];
+      if (typeof onLeaveHandler === 'function') onLeaveHandler(String(peerId));
+    }
+  };
+}
+
+function createFakeJoinRoom(initialPeers = {}) {
+  const calls = [];
+  const rooms = [];
+  const joinRoom = async (_config, roomName) => {
+    calls.push(String(roomName));
+    const room = createFakeRoom(initialPeers);
+    room.roomName = String(roomName);
+    rooms.push(room);
+    return room;
+  };
+  return { joinRoom, calls, rooms };
+}
+
+function dispatchKeydown(element, key, extra = {}) {
+  element.dispatchEvent({
+    type: 'keydown',
+    key,
+    ...extra
+  });
+}
+
+function getPresenceNames(app) {
+  const presenceList = app.elements.get('presenceList');
+  if (!presenceList) return [];
+  const names = [];
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return;
+    const classes = String(node.className || '').split(/\s+/).filter(Boolean);
+    if (classes.includes('presence-name')) {
+      names.push(String(node.textContent || ''));
+    }
+    (node.children || []).forEach(visit);
+  };
+  visit(presenceList);
+  return names;
+}
+
 test('normalizeMacros coerces values to strings and unwraps arrays', () => {
   const { hooks } = loadBackend();
   const normalized = toPlain(hooks.normalizeMacros({
@@ -216,4 +306,361 @@ test('saved room is restored when URL has no room (collab)', () => {
   });
   app.runWindowEvent('load');
   assert.equal(app.hooks.getRoomInputValue(), 'saved-room');
+});
+
+test('render classic mode routes non-empty lines to katex.render and keeps blank lines as <br>', () => {
+  const app = loadBackend();
+  app.hooks.setMode('classic');
+  app.hooks.setMACROS({ '\\RR': '\\mathbb{R}' });
+  app.hooks.setEditorValue('x^2\n\n\\RR');
+  app.hooks.render();
+
+  assert.equal(app.katexRenderCalls.length, 2);
+  assert.equal(app.katexRenderCalls[0][0], 'x^2');
+  assert.equal(app.katexRenderCalls[1][0], '\\RR');
+  assert.deepEqual(toPlain(app.katexRenderCalls[0][2].macros), { '\\RR': '\\mathbb{R}' });
+  assert.equal(app.katexRenderCalls[0][2].displayMode, true);
+  assert.deepEqual(toPlain(app.hooks.getPreviewNodeIds()), ['div', 'br', 'div']);
+  assert.equal(app.renderMathCalls.length, 0);
+});
+
+test('render mixed mode routes lines through renderMathInElement with expected delimiters', () => {
+  const app = loadBackend();
+  app.hooks.setMode('mixed');
+  app.hooks.setMACROS({ '\\NN': '\\mathbb{N}' });
+  app.hooks.setEditorValue('Line $x$\n\n$$y$$');
+  app.hooks.render();
+
+  assert.equal(app.renderMathCalls.length, 2);
+  assert.equal(app.renderMathCalls[0][0].textContent, 'Line $x$');
+  assert.equal(app.renderMathCalls[1][0].textContent, '$$y$$');
+  assert.deepEqual(toPlain(app.renderMathCalls[0][1].macros), { '\\NN': '\\mathbb{N}' });
+  assert.deepEqual(toPlain(app.renderMathCalls[0][1].delimiters), [
+    { left: '$$', right: '$$', display: true },
+    { left: '$', right: '$', display: false }
+  ]);
+  assert.deepEqual(toPlain(app.hooks.getPreviewNodeIds()), ['div', 'br', 'div']);
+  assert.equal(app.katexRenderCalls.length, 0);
+});
+
+test('render falls back to error text when katex.render throws', () => {
+  const app = loadBackend({
+    katexRenderImpl: (line) => {
+      if (line === 'bad') throw new Error('boom');
+    }
+  });
+  app.hooks.setMode('classic');
+  app.hooks.setEditorValue('bad');
+  app.hooks.render();
+  assert.equal(app.hooks.getPreviewTexts()[0], 'boom');
+});
+
+test('render stick-to-bottom behavior differs by desktop vs first mobile render', () => {
+  const desktopApp = loadBackend({ mobile: false });
+  const desktopPreview = desktopApp.elements.get('preview');
+  desktopApp.hooks.setMode('classic');
+  desktopApp.hooks.setEditorValue('x');
+  desktopPreview.clientHeight = 400;
+  desktopPreview.scrollHeight = 1000;
+  desktopPreview.scrollTop = 599;
+  desktopApp.hooks.render();
+  assert.equal(desktopPreview.scrollTop, 600);
+
+  const mobileApp = loadBackend({ mobile: true });
+  const mobilePreview = mobileApp.elements.get('preview');
+  mobileApp.hooks.setMode('classic');
+  mobileApp.hooks.setEditorValue('x');
+  mobilePreview.clientHeight = 400;
+  mobilePreview.scrollHeight = 1000;
+  mobilePreview.scrollTop = 599;
+  mobileApp.hooks.render();
+  assert.equal(mobilePreview.scrollTop, 599);
+  assert.equal(mobileApp.hooks.getPreviewChildCount(), 1);
+  mobilePreview.scrollTop = 599;
+  mobileApp.hooks.render();
+  assert.equal(mobilePreview.scrollTop, 600);
+});
+
+test('collab ignores stale clock payloads from the same peer', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+
+  room.emitState(
+    { kind: 'cursor', from: 'peer-a', clock: 2, name: 'Alpha', cursor: { start: 1, end: 1 } },
+    'peer-a'
+  );
+  const namesAfterFresh = getPresenceNames(app);
+  assert.ok(namesAfterFresh.includes('Alpha'));
+
+  room.emitState(
+    { kind: 'cursor', from: 'peer-a', clock: 1, name: 'Beta', cursor: { start: 2, end: 2 } },
+    'peer-a'
+  );
+  const namesAfterStale = getPresenceNames(app);
+  assert.ok(namesAfterStale.includes('Alpha'));
+  assert.ok(!namesAfterStale.includes('Beta'));
+});
+
+test('collab requests sync when incoming delta base length mismatches local text', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  app.hooks.setEditorValue('abcdef');
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+  room.sent.length = 0;
+
+  room.emitState(
+    {
+      kind: 'delta',
+      from: 'peer-a',
+      clock: 10,
+      delta: { index: 0, remove: 1, insert: 'Z' },
+      baseLength: 999,
+      resultLength: 999
+    },
+    'peer-a'
+  );
+
+  assert.ok(room.sent.some((payload) => payload.kind === 'request'));
+});
+
+test('collab macros updates merge by default and replace on save/reset reasons', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+
+  room.emitState(
+    {
+      kind: 'macros',
+      from: 'peer-a',
+      owner: 0,
+      reason: 'update',
+      macros: {
+        '\\RR': '\\mathbb{R}',
+        '\\FBF': '\\mathrm{override}'
+      }
+    },
+    'peer-a'
+  );
+  const merged = toPlain(app.hooks.getMACROS());
+  assert.equal(merged['\\RR'], '\\mathbb{R}');
+  assert.equal(merged['\\FBF'], '\\mathrm{FBF}');
+
+  room.emitState(
+    {
+      kind: 'macros',
+      from: 'peer-a',
+      owner: 0,
+      reason: 'save',
+      macros: {
+        '\\X': 'x'
+      }
+    },
+    'peer-a'
+  );
+  assert.deepEqual(toPlain(app.hooks.getMACROS()), { '\\X': 'x' });
+});
+
+test('collab host election uses earliest join time and lexical peer id tie-breaker', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+  const localInfo = toPlain(app.hooks.collabHostInfo());
+  const localTs = localInfo.joinTimestamp;
+  const firstHello = room.sent.find((payload) => payload.kind === 'hello');
+  const localId = firstHello?.from;
+  assert.ok(localId);
+
+  room.emitJoin('peer-z');
+  room.emitState(
+    { kind: 'hello', from: 'peer-z', joinedAt: localTs + 10, name: 'Peer Z' },
+    'peer-z'
+  );
+  let hostInfo = toPlain(app.hooks.collabHostInfo());
+  assert.equal(hostInfo.hostId, localId);
+  assert.equal(hostInfo.isRoomOwner, true);
+
+  room.emitJoin('!peer-a');
+  room.emitState(
+    { kind: 'hello', from: '!peer-a', joinedAt: localTs, name: 'Peer A' },
+    '!peer-a'
+  );
+  hostInfo = toPlain(app.hooks.collabHostInfo());
+  assert.equal(hostInfo.hostId, '!peer-a');
+  assert.equal(hostInfo.isRoomOwner, false);
+});
+
+test('join warning modal gates connect and can persist "dont show again"', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  const roomInput = app.elements.get('roomNameInput');
+  const roomJoinBtn = app.elements.get('roomJoinBtn');
+  const joinPop = app.elements.get('joinPop');
+  const joinPopCancel = app.elements.get('joinPopCancel');
+  const joinPopDismiss = app.elements.get('joinPopDismiss');
+  const joinPopDontShow = app.elements.get('joinPopDontShow');
+  const joinWarningKey = app.hooks.getStorageKey('joinwarning.v2');
+
+  roomInput.value = 'room-one';
+  roomJoinBtn.click();
+  assert.equal(joinPop.style.display, 'block');
+  assert.equal(rig.calls.length, 0);
+
+  joinPopCancel.click();
+  assert.equal(joinPop.style.display, 'none');
+  assert.equal(roomInput.value, '');
+  assert.equal(rig.calls.length, 0);
+
+  roomInput.value = 'room-two';
+  roomJoinBtn.click();
+  joinPopDontShow.checked = true;
+  joinPopDismiss.click();
+  await Promise.resolve();
+  assert.equal(app.storage.get(joinWarningKey), '1');
+  assert.equal(rig.calls.length, 1);
+  assert.equal(rig.calls[0], 'room-two');
+
+  app.hooks.collabLeave();
+  roomInput.value = 'room-three';
+  roomJoinBtn.click();
+  await Promise.resolve();
+  assert.equal(rig.calls.length, 2);
+  assert.equal(joinPop.style.display, 'none');
+});
+
+test('Tab and Shift+Tab indent/outdent multiline selections with expected cursor updates', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.value = 'aa\nbb';
+  editor.selectionStart = 0;
+  editor.selectionEnd = editor.value.length;
+
+  dispatchKeydown(editor, 'Tab');
+  assert.equal(editor.value, '  aa\n  bb');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 9);
+
+  dispatchKeydown(editor, 'Tab', { shiftKey: true });
+  assert.equal(editor.value, 'aa\nbb');
+  assert.equal(editor.selectionStart, 0);
+  assert.equal(editor.selectionEnd, 5);
+});
+
+test('dollar pairing handles plain insert, multiline wrap, and closer-skip', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+
+  editor.value = 'ab';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  dispatchKeydown(editor, '$');
+  assert.equal(editor.value, 'a$$b');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 2);
+
+  editor.value = 'x\ny';
+  editor.selectionStart = 0;
+  editor.selectionEnd = editor.value.length;
+  dispatchKeydown(editor, '$');
+  assert.equal(editor.value, '$$x\ny$$');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 5);
+
+  editor.value = '$$';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  dispatchKeydown(editor, '$');
+  assert.equal(editor.value, '$$');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 2);
+});
+
+test('bracket pairing wraps selections and closer keys skip existing closers', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+
+  editor.value = 'abc';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 2;
+  dispatchKeydown(editor, '(');
+  assert.equal(editor.value, 'a(b)c');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 3);
+
+  editor.value = '()';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  dispatchKeydown(editor, ')');
+  assert.equal(editor.value, '()');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 2);
+});
+
+test('Backspace removes paired delimiters as a unit', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  const pairs = [['$$', '$$'], ['$', '$'], ['(', ')'], ['[', ']'], ['{', '}']];
+
+  for (const [open, close] of pairs) {
+    editor.value = open + close;
+    editor.selectionStart = open.length;
+    editor.selectionEnd = open.length;
+    dispatchKeydown(editor, 'Backspace');
+    assert.equal(editor.value, '', `pair ${open}${close} should be deleted`);
+    assert.equal(editor.selectionStart, 0);
+    assert.equal(editor.selectionEnd, 0);
+  }
+});
+
+test('cursor and scroll persistence writes on keyup, input, and click', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  const cursorKey = app.hooks.getStorageKey('cursor.v1');
+  const scrollKey = app.hooks.getStorageKey('scroll.v1');
+
+  editor.value = 'abcdef';
+  editor.selectionStart = 3;
+  editor.selectionEnd = 3;
+  editor.scrollTop = 42;
+  editor.dispatchEvent({ type: 'keyup', key: 'ArrowRight' });
+  assert.equal(app.storage.get(cursorKey), '3');
+  assert.equal(app.storage.get(scrollKey), '42');
+
+  editor.selectionStart = 5;
+  editor.selectionEnd = 5;
+  editor.scrollTop = 70;
+  editor.dispatchEvent({ type: 'input' });
+  assert.equal(app.storage.get(cursorKey), '5');
+  assert.equal(app.storage.get(scrollKey), '70');
+
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  editor.scrollTop = 9;
+  editor.dispatchEvent({ type: 'click' });
+  assert.equal(app.storage.get(cursorKey), '1');
+  assert.equal(app.storage.get(scrollKey), '9');
 });

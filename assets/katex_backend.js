@@ -2285,6 +2285,10 @@ if (ENABLE_COLLAB) {
 
     async function ensureTrystero() {
       if (joinRoomImpl) return joinRoomImpl;
+      if (typeof window !== 'undefined' && typeof window.__LATEX_LAB_TEST_JOIN_ROOM__ === 'function') {
+        joinRoomImpl = window.__LATEX_LAB_TEST_JOIN_ROOM__;
+        return joinRoomImpl;
+      }
       if (!loadPromise) {
         const sources = ['/assets/vendor/trystero-mqtt.min.js'];
         loadPromise = (async () => {
