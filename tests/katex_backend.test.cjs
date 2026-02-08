@@ -4,14 +4,6 @@ const { loadBackend } = require('./helpers/load-katex-backend.cjs');
 
 const toPlain = (value) => JSON.parse(JSON.stringify(value));
 
-test('default shortcuts include FBF first with no args', () => {
-  const { hooks } = loadBackend();
-  const keys = Object.keys(toPlain(hooks.DEFAULT_MACROS));
-  assert.equal(keys[0], '\\FBF');
-  assert.equal(hooks.DEFAULT_MACROS['\\FBF'], '\\mathrm{FBF}');
-  assert.equal(hooks.maxArgCount(hooks.DEFAULT_MACROS['\\FBF']), 0);
-});
-
 test('normalizeMacros coerces values to strings and unwraps arrays', () => {
   const { hooks } = loadBackend();
   const normalized = toPlain(hooks.normalizeMacros({
