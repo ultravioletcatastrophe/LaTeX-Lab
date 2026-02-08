@@ -343,6 +343,22 @@ test('render mixed mode routes lines through renderMathInElement with expected d
   assert.equal(app.katexRenderCalls.length, 0);
 });
 
+test('render mixed mode keeps escaped dollar signs as literal text outside math delimiters', () => {
+  let sourceAtRender = '';
+  const app = loadBackend({
+    renderMathInElementImpl: (element) => {
+      sourceAtRender = element.textContent;
+    }
+  });
+  app.hooks.setMode('mixed');
+  app.hooks.setEditorValue('Cost: \\$5 and \\$x\\$ plus $a+\\$b$');
+  app.hooks.render();
+
+  assert.equal(app.renderMathCalls.length, 1);
+  assert.equal(sourceAtRender.includes('\\$b'), true);
+  assert.equal(app.renderMathCalls[0][0].textContent, 'Cost: $5 and $x$ plus $a+\\$b$');
+});
+
 test('render falls back to error text when katex.render throws', () => {
   const app = loadBackend({
     katexRenderImpl: (line) => {

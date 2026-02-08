@@ -759,6 +759,112 @@ function applyModeUi(modeValue){
   document.body.classList.toggle('classic', modeValue === 'classic');
 }
 
+const ESCAPED_DOLLAR_PLACEHOLDER = '\uE000LATEXLAB_ESCAPED_DOLLAR\uE001';
+
+function protectEscapedDollarsOutsideMath(line){
+  if (typeof line !== 'string' || line.indexOf('\\$') === -1){
+    return { text: line, touched: false };
+  }
+
+  let out = '';
+  let i = 0;
+  let activeDelimiter = null;
+
+  while (i < line.length){
+    const ch = line[i];
+    const next = line[i + 1];
+
+    if (ch === '\\'){
+      if (!activeDelimiter && next === '$'){
+        out += ESCAPED_DOLLAR_PLACEHOLDER;
+        i += 2;
+        continue;
+      }
+      if (typeof next === 'string'){
+        out += ch + next;
+        i += 2;
+      } else {
+        out += ch;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (!activeDelimiter){
+      if (ch === '$' && next === '$'){
+        activeDelimiter = '$$';
+        out += '$$';
+        i += 2;
+        continue;
+      }
+      if (ch === '$'){
+        activeDelimiter = '$';
+        out += '$';
+        i += 1;
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    if (activeDelimiter === '$$' && ch === '$' && next === '$'){
+      activeDelimiter = null;
+      out += '$$';
+      i += 2;
+      continue;
+    }
+    if (activeDelimiter === '$' && ch === '$'){
+      activeDelimiter = null;
+      out += '$';
+      i += 1;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return { text: out, touched: out !== line };
+}
+
+function restoreEscapedDollarPlaceholders(root){
+  if (!root) return;
+  const replace = (value) => String(value).split(ESCAPED_DOLLAR_PLACEHOLDER).join('$');
+
+  if (typeof document.createTreeWalker === 'function' && typeof NodeFilter !== 'undefined'){
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let textNode = walker.nextNode();
+    while (textNode){
+      if (typeof textNode.nodeValue === 'string' && textNode.nodeValue.indexOf(ESCAPED_DOLLAR_PLACEHOLDER) !== -1){
+        textNode.nodeValue = replace(textNode.nodeValue);
+      }
+      textNode = walker.nextNode();
+    }
+    return;
+  }
+
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.nodeType === 3){
+      if (typeof node.textContent === 'string' && node.textContent.indexOf(ESCAPED_DOLLAR_PLACEHOLDER) !== -1){
+        node.textContent = replace(node.textContent);
+      }
+      if (typeof node.nodeValue === 'string' && node.nodeValue.indexOf(ESCAPED_DOLLAR_PLACEHOLDER) !== -1){
+        node.nodeValue = replace(node.nodeValue);
+      }
+      return;
+    }
+    const children = Array.from(node.childNodes || node.children || []);
+    if (children.length === 0 && typeof node.textContent === 'string' && node.textContent.indexOf(ESCAPED_DOLLAR_PLACEHOLDER) !== -1){
+      node.textContent = replace(node.textContent);
+    }
+    for (const child of children) visit(child);
+  };
+
+  visit(root);
+}
+
 const Guides = (() => {
   const lineHeightCache = new Map();
   const entries = [];
@@ -1057,8 +1163,10 @@ function render(){
     for (const line of lines){
       if (line.trim() === '') { preview.appendChild(document.createElement('br')); continue; }
       const wrap = document.createElement('div');
-      wrap.textContent = line;
+      const mixedLine = protectEscapedDollarsOutsideMath(line);
+      wrap.textContent = mixedLine.text;
       renderMathInElement(wrap, { delimiters: [ {left:"$$", right:"$$", display:true}, {left:"$", right:"$", display:false} ], throwOnError:false, macros: MACROS });
+      if (mixedLine.touched) restoreEscapedDollarPlaceholders(wrap);
       preview.appendChild(wrap);
     }
   }
