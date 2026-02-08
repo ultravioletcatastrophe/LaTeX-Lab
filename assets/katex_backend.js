@@ -56,6 +56,7 @@ const modeDesc = document.getElementById('modeDesc');
 const darkToggle = document.getElementById('darkToggle');
 
 const pngBtn = document.getElementById('pngBtn');
+const pdfBtn = document.getElementById('pdfBtn');
 const clearBtn = document.getElementById('clearBtn');
 const shareBtn = document.getElementById('shareBtn');
 
@@ -3396,21 +3397,33 @@ const Exporter = (() => {
     return new Blob([u8], { type: mime });
   }
 
-  async function canvasToBlobUrl(canvas){
+  async function canvasToBlob(canvas){
     return new Promise((resolve, reject) => {
       if (canvas.toBlob){
         canvas.toBlob(blob => {
-          if (!blob){ reject(new Error('Canvas export returned empty blob.')); return; }
-          resolve(URL.createObjectURL(blob));
+          if (!blob){
+            reject(new Error('Canvas export returned empty blob.'));
+            return;
+          }
+          resolve(blob);
         }, 'image/png');
       } else {
         try {
           const dataUrl = canvas.toDataURL('image/png');
-          resolve(URL.createObjectURL(dataUrlToBlob(dataUrl)));
+          resolve(dataUrlToBlob(dataUrl));
         } catch (err) {
           reject(err);
         }
       }
+    });
+  }
+
+  async function blobToDataUrl(blob){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read blob as data URL.'));
+      reader.readAsDataURL(blob);
     });
   }
 
@@ -3420,11 +3433,11 @@ const Exporter = (() => {
     return `latex-lab-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.${ext}`;
   }
 
-  async function renderToObjectUrl(wrapper, dims, bg, sandbox){
+  async function renderToPngBlob(wrapper, dims, bg, sandbox){
     if (window.htmlToImage?.toPng){
       try {
         const dataUrl = await window.htmlToImage.toPng(wrapper, { pixelRatio: 1, backgroundColor: bg, cacheBust: true, width: dims.width, height: dims.height, fetchRequestInit: { mode: 'cors', credentials: 'omit' }, style: { transform: 'none' } });
-        return URL.createObjectURL(dataUrlToBlob(dataUrl));
+        return dataUrlToBlob(dataUrl);
       } catch (err) {
         console.warn('html-to-image export failed, falling back to canvas render:', err);
       }
@@ -3432,14 +3445,14 @@ const Exporter = (() => {
 
     try {
       const canvas = await html2canvas(wrapper, { backgroundColor: bg, scale: 1, width: dims.width, height: dims.height, useCORS: true, foreignObjectRendering: false });
-      return await canvasToBlobUrl(canvas);
+      return await canvasToBlob(canvas);
     } catch (err) {
       const canvas = await html2canvas(sandbox, { backgroundColor: bg, scale: 1, useCORS: true, foreignObjectRendering: false });
-      return await canvasToBlobUrl(canvas);
+      return await canvasToBlob(canvas);
     }
   }
 
-  async function exportPNG(){
+  async function renderPreviewToPngBlob(){
     const bg = getComputedStyle(preview).backgroundColor || getComputedStyle(document.body).backgroundColor;
     const { sandbox, wrapper } = createSandbox(bg);
     document.body.appendChild(sandbox);
@@ -3447,15 +3460,30 @@ const Exporter = (() => {
       applyPreviewStyles(wrapper, Math.max(1, EXPORT_SCALE | 0));
       populateWrapper(wrapper);
       if (!Array.from(wrapper.children).some(isMeaningfulNode)){
-        alert('Nothing to export yet — add some text or math first.');
-        return;
+        return null;
       }
       await ensureFontsReady();
       await settleLayout();
       const rect = wrapper.getBoundingClientRect();
       const dims = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      if (dims.width <= 0 || dims.height <= 0) throw new Error('Preview is empty after layout.');
-      const blobUrl = await renderToObjectUrl(wrapper, dims, bg, sandbox);
+      if (dims.width <= 0 || dims.height <= 0){
+        throw new Error('Preview is empty after layout.');
+      }
+      const pngBlob = await renderToPngBlob(wrapper, dims, bg, sandbox);
+      return { pngBlob, dims };
+    } finally {
+      sandbox.remove();
+    }
+  }
+
+  async function exportPNG(){
+    try {
+      const capture = await renderPreviewToPngBlob();
+      if (!capture){
+        alert('Nothing to export yet — add some text or math first.');
+        return;
+      }
+      const blobUrl = URL.createObjectURL(capture.pngBlob);
       triggerDownload(blobUrl, stampName('png'));
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
     } catch (err) {
@@ -3465,15 +3493,76 @@ const Exporter = (() => {
         console.error('PNG export failed:', err);
         alert('PNG export failed. Check the console for details.');
       }
-    } finally {
-      sandbox.remove();
     }
   }
 
-  return { exportPNG };
+  async function exportPDF(){
+    try {
+      const jsPDFCtor = window.jspdf?.jsPDF;
+      if (typeof jsPDFCtor !== 'function'){
+        alert('PDF export is unavailable right now. Reload the page and try again.');
+        return;
+      }
+
+      const capture = await renderPreviewToPngBlob();
+      if (!capture){
+        alert('Nothing to export yet — add some text or math first.');
+        return;
+      }
+
+      const imageDataUrl = await blobToDataUrl(capture.pngBlob);
+      const pxToPt = (px) => (Number(px) || 0) * 72 / 96;
+      const pageWidth = Math.max(1, pxToPt(capture.dims.width));
+      const pageHeight = Math.max(1, pxToPt(capture.dims.height));
+      const orientation = pageWidth >= pageHeight ? 'landscape' : 'portrait';
+      const doc = new jsPDFCtor({
+        orientation,
+        unit: 'pt',
+        format: [pageWidth, pageHeight],
+        compress: true
+      });
+
+      doc.addImage(imageDataUrl, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      triggerDownload(pdfUrl, stampName('pdf'));
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 1500);
+    } catch (err) {
+      if (err instanceof FontLoadError){
+        alert('PDF export is waiting for fonts to finish loading. Give it a moment and try again.');
+      } else {
+        console.error('PDF export failed:', err);
+        alert('PDF export failed. Check the console for details.');
+      }
+    }
+  }
+
+  return { exportPNG, exportPDF };
 })();
 
-pngBtn?.addEventListener('click', () => Exporter.exportPNG());
+async function runExport(button, loadingLabel, action){
+  if (!button){
+    await action();
+    return;
+  }
+  if (button.disabled) return;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = loadingLabel;
+  try {
+    await action();
+  } finally {
+    button.textContent = originalLabel;
+    button.disabled = false;
+  }
+}
+
+pngBtn?.addEventListener('click', () => {
+  void runExport(pngBtn, '⏳ PNG', () => Exporter.exportPNG());
+});
+pdfBtn?.addEventListener('click', () => {
+  void runExport(pdfBtn, '⏳ PDF', () => Exporter.exportPDF());
+});
 
 clearBtn?.addEventListener('click', () => {
   if (!confirm('Clear editor and saved text?')) return;

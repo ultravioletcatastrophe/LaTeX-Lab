@@ -7,7 +7,7 @@ const BACKEND_PATH = path.resolve(__dirname, '..', '..', 'assets', 'katex_backen
 const ELEMENT_IDS = [
   'editor', 'gutter', 'overlay', 'preview', 'divider', 'leftPane', 'editorWrap', 'measure',
   'modeToggle', 'modeLabel', 'modeDesc', 'darkToggle',
-  'pngBtn', 'clearBtn', 'shareBtn',
+  'pngBtn', 'pdfBtn', 'clearBtn', 'shareBtn',
   'snippetsMenu', 'snippetsBtn', 'openMatrixGen', 'openTableGen', 'insertCases',
   'matrixModal', 'mRows', 'mCols', 'mType', 'matrixPrev', 'mCancel', 'mInsert',
   'tableModal', 'tRows', 'tCols', 'tAlign', 'tBorders', 'tablePrev', 'tCancel', 'tInsert',

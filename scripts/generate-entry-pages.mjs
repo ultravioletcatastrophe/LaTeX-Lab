@@ -26,7 +26,7 @@ const variants = [
       WELCOME_CONTENT: `      <p>
         This is an in-browser LaTeX playground with live KaTeX rendering.
         Type plain text and math, switch between <b>Mixed</b> mode (text + $inline$ / $$display$$ math)
-        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
+        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNG/PDF files.
         Dark mode and custom shortcuts are supported too.
       </p>`,
       WELCOME_BUTTON: 'Got it',
@@ -74,7 +74,7 @@ const variants = [
       <ul>
         <li><strong>Join or create rooms:</strong> pop a room name in the toolbar and anyone using it appears instantly.</li>
         <li><strong>Live updates:</strong> edits sync peer‑to‑peer using the Trystero protocol.</li>
-        <li><strong>Other features:</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math. Dark mode, PNG exports, and custom shortcuts are supported too.</li>
+        <li><strong>Other features:</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math. Dark mode, PNG/PDF exports, and custom shortcuts are supported too.</li>
       </ul>`,
       WELCOME_BUTTON: 'Let’s collaborate',
       CONFIG_COLLAB: 'true',

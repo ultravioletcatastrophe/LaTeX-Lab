@@ -16,7 +16,7 @@ LaTeX Lab is a zero‑setup, in‑browser workspace for typing math and seeing K
 ## What It Does Well
 - Mixed mode (text + `$inline$` / `$$display$$`) and Classic mode (each line is display math).
 - Side‑by‑side editor + preview with synced line gutters and persistent split widths.
-- High‑resolution PNG export with embedded fonts.
+- High‑resolution PNG/PDF export with embedded fonts.
 - Shareable links compress text, layout, theme, and macros into the URL.
 - Matrix/table/cases builders and a macros manager for `\newcommand` shortcuts.
 - Keyboard‑first editing: smart indent/outdent, paired delimiter insertion, Esc to close modals.

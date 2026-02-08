@@ -15,6 +15,7 @@
 
   <script src="/assets/vendor/html2canvas.min.js" defer></script>
   <script src="/assets/vendor/html-to-image.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 
   <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/fonts/KaTeX_Main-Regular.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/fonts/KaTeX_Main-Italic.woff2" crossorigin>
@@ -99,6 +100,7 @@
       </div>
 
       <button id="pngBtn">🖼️ PNG</button>
+      <button id="pdfBtn">📄 PDF</button>
       <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
     </div>
   </div>
@@ -190,7 +192,7 @@
       <ul>
         <li><strong>Join or create rooms:</strong> pop a room name in the toolbar and anyone using it appears instantly.</li>
         <li><strong>Live updates:</strong> edits sync peer‑to‑peer using the Trystero protocol.</li>
-        <li><strong>Other features:</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math. Dark mode, PNG exports, and custom shortcuts are supported too.</li>
+        <li><strong>Other features:</strong> Mixed mode supports plain text with math, while Classic mode renders every line as math. Dark mode, PNG/PDF exports, and custom shortcuts are supported too.</li>
       </ul>
       <button id="welcomeClose">Let’s collaborate</button>
     </div>

@@ -12,6 +12,7 @@
 
   <script src="/assets/vendor/html2canvas.min.js" defer></script>
   <script src="/assets/vendor/html-to-image.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" defer></script>
 
   <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/fonts/KaTeX_Main-Regular.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/fonts/KaTeX_Main-Italic.woff2" crossorigin>
@@ -85,6 +86,7 @@
       </div>
 
       <button id="pngBtn">🖼️ PNG</button>
+      <button id="pdfBtn">📄 PDF</button>
       <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
     </div>
   </div>
@@ -162,7 +164,7 @@
       <p>
         This is an in-browser LaTeX playground with live KaTeX rendering.
         Type plain text and math, switch between <b>Mixed</b> mode (text + $inline$ / $$display$$ math)
-        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNGs.
+        or <b>Classic</b> mode (every line renders as math), and export high-resolution PNG/PDF files.
         Dark mode and custom shortcuts are supported too.
       </p>
       <button id="welcomeClose">Got it</button>
