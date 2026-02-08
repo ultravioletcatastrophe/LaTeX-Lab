@@ -723,7 +723,7 @@ function parseMacrosInput(raw){
 }
 
 let mode = 'mixed';
-const DEFAULT_MACROS = { "\\abs": "\\left|#1\\right|", "\\norm": "\\left\\lVert#1\\right\\rVert" };
+const DEFAULT_MACROS = { "\\FBF": "\\mathrm{FBF}", "\\abs": "\\left|#1\\right|", "\\norm": "\\left\\lVert#1\\right\\rVert" };
 let MACROS = { ...DEFAULT_MACROS };
 let lastBroadcastMacrosJSON = JSON.stringify(normalizeMacros(MACROS));
 
