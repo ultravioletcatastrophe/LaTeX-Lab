@@ -2,15 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { EXPORT_GOLDEN_ENABLED, EXPORT_GOLDEN_HINT } = require('./helpers/playwright_flags.cjs');
+const { startStaticServer, closeServer } = require('./helpers/playwright_static_server.cjs');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const IMAGES_DIR = path.join(ROOT_DIR, 'assets', 'images');
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'export');
-const SHOULD_RUN = process.env.LATEXLAB_EXPORT_GOLDEN === '1';
-const DOWNLOAD_TIMEOUT_MS = Number(process.env.LATEXLAB_EXPORT_TIMEOUT_MS || 120000);
+const SHOULD_RUN = EXPORT_GOLDEN_ENABLED;
+const DOWNLOAD_TIMEOUT_MS = Number(
+  process.env.LATEX_LAB_EXPORT_TIMEOUT_MS ||
+  process.env.LATEXLAB_EXPORT_TIMEOUT_MS ||
+  120000
+);
 
 let playwright = null;
 try {
@@ -21,31 +26,16 @@ try {
 }
 
 const SCENARIOS = [
-  { id: 'mixed-light', mode: 'mixed', dark: false, fixture: 'mixed-content.txt' },
-  { id: 'mixed-dark', mode: 'mixed', dark: true, fixture: 'mixed-content.txt' },
-  { id: 'classic-light', mode: 'classic', dark: false, fixture: 'classic-content.txt' },
-  { id: 'classic-dark', mode: 'classic', dark: true, fixture: 'classic-content.txt' }
+  { id: 'mixed-light', mode: 'mixed', dark: false },
+  { id: 'mixed-dark', mode: 'mixed', dark: true },
+  { id: 'classic-light', mode: 'classic', dark: false },
+  { id: 'classic-dark', mode: 'classic', dark: true }
 ];
 
 const FORMATS = ['png', 'pdf'];
 
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
-}
-
-function mimeTypeFor(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.html') return 'text/html; charset=utf-8';
-  if (ext === '.js' || ext === '.mjs') return 'application/javascript; charset=utf-8';
-  if (ext === '.css') return 'text/css; charset=utf-8';
-  if (ext === '.json') return 'application/json; charset=utf-8';
-  if (ext === '.png') return 'image/png';
-  if (ext === '.pdf') return 'application/pdf';
-  if (ext === '.svg') return 'image/svg+xml';
-  if (ext === '.woff2') return 'font/woff2';
-  if (ext === '.woff') return 'font/woff';
-  if (ext === '.txt') return 'text/plain; charset=utf-8';
-  return 'application/octet-stream';
 }
 
 function normalizePdfBytes(buffer) {
@@ -72,53 +62,6 @@ function assertGoldenMatch(format, actualBytes, expectedBytes, label) {
     true,
     `${label} mismatch\nexpected sha256=${sha256(expectedBytes)}\nactual   sha256=${sha256(actualBytes)}`
   );
-}
-
-function startStaticServer(rootDir) {
-  const server = http.createServer((req, res) => {
-    try {
-      const url = new URL(req.url || '/', 'http://127.0.0.1');
-      const pathname = decodeURIComponent(url.pathname);
-      const rel = pathname === '/' ? '/latex_lab.html' : pathname;
-      const filePath = path.resolve(rootDir, `.${rel}`);
-      if (!filePath.startsWith(rootDir)) {
-        res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('Forbidden');
-        return;
-      }
-      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('Not Found');
-        return;
-      }
-      res.writeHead(200, {
-        'content-type': mimeTypeFor(filePath),
-        'cache-control': 'no-cache, no-store, must-revalidate'
-      });
-      fs.createReadStream(filePath).pipe(res);
-    } catch (err) {
-      res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end(String(err && err.message ? err.message : err));
-    }
-  });
-
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address();
-      resolve({
-        server,
-        origin: `http://127.0.0.1:${addr.port}`
-      });
-    });
-  });
-}
-
-async function closeServer(server) {
-  if (!server) return;
-  await new Promise((resolve) => {
-    server.close(() => resolve());
-  });
 }
 
 async function applyScenarioState(page, scenario, content) {
@@ -216,7 +159,7 @@ async function exportAndCompare(page, scenario, format, tmpDir) {
     if (err && err.name === 'TimeoutError') {
       throw new Error(
         `Timed out waiting for download for ${label} after ${DOWNLOAD_TIMEOUT_MS}ms. ` +
-        `Try increasing LATEXLAB_EXPORT_TIMEOUT_MS.`
+        `Try increasing LATEX_LAB_EXPORT_TIMEOUT_MS.`
       );
     }
     throw err;
@@ -244,7 +187,7 @@ test(
   },
   async (t) => {
     if (!SHOULD_RUN) {
-      t.diagnostic('Set LATEXLAB_EXPORT_GOLDEN=1 to enable export golden tests.');
+      t.diagnostic(EXPORT_GOLDEN_HINT);
       return;
     }
     if (!playwright) {
@@ -279,8 +222,7 @@ test(
         return !!(window.katex && window.renderMathInElement && window.jspdf && window.jspdf.jsPDF);
       });
       if (!depsReady) {
-        t.diagnostic('Runtime dependencies were not available in page context; skipping.');
-        return;
+        assert.fail('Runtime dependencies were not available in page context.');
       }
 
       for (const scenario of SCENARIOS) {

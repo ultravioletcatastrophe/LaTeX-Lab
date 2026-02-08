@@ -34,8 +34,10 @@ Static HTML that loads CDN‑hosted KaTeX, html‑to‑image, and html2canvas. N
 ## Testing
 - Run all tests with `node --test`.
 - Tests live in `tests/katex_backend.test.cjs` and execute `assets/katex_backend.js` in a mocked browser environment (`tests/helpers/load-katex-backend.cjs`).
-- Optional export golden test (real browser + file downloads): `LATEXLAB_EXPORT_GOLDEN=1 node --test tests/export_golden.test.cjs`.
-  This requires `playwright` to be installed locally and compares generated PNG/PDF exports against baselines in `assets/images`.
+- Playwright smoke tests (browser): `LATEX_LAB_PLAYWRIGHT=1 node --test`.
+- Export golden tests only (browser + downloads): `LATEX_LAB_EXPORT_GOLDEN=1 node --test tests/export_golden.test.cjs`.
+- `PLAYWRIGHT=1 node --test` also enables all Playwright tests, including export goldens.
+- Browser tests require `playwright` to be installed locally. Export golden tests compare generated PNG/PDF exports against baselines in `assets/images`.
 
 ## License
 This project is licensed under GPL-3.0. See `LICENSE`.
