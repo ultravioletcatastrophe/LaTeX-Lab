@@ -3355,12 +3355,26 @@ const Exporter = (() => {
     wrapper.querySelectorAll('.katex-display').forEach(el => {
       el.style.marginTop = '0';
       el.style.marginBottom = '0';
+      // KaTeX display blocks use horizontal scrolling by default.
+      // For export, let content spill naturally so we can widen capture bounds.
+      el.style.overflow = 'visible';
     });
     wrapper.querySelectorAll('img, canvas').forEach(el => {
       el.style.display = 'inline-block';
       el.style.verticalAlign = 'baseline';
     });
     trimLeadingTrailingBlanks(wrapper);
+  }
+
+  function growWrapperToFitOverflow(wrapper){
+    const overflowPx = Math.ceil((wrapper.scrollWidth || 0) - (wrapper.clientWidth || 0));
+    if (!(overflowPx > 0)) return false;
+    const currentWidth = parseFloat(wrapper.style.width || '0');
+    const baseWidth = Number.isFinite(currentWidth) && currentWidth > 0
+      ? currentWidth
+      : Math.max(0, (wrapper.clientWidth || 0));
+    wrapper.style.width = `${Math.ceil(baseWidth + overflowPx)}px`;
+    return true;
   }
 
   async function ensureFontsReady(timeout = 1200){
@@ -3469,8 +3483,14 @@ const Exporter = (() => {
       }
       await ensureFontsReady();
       await settleLayout();
+      if (growWrapperToFitOverflow(wrapper)){
+        await settleLayout();
+      }
       const rect = wrapper.getBoundingClientRect();
-      const dims = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+      const dims = {
+        width: Math.ceil(Math.max(rect.width, wrapper.scrollWidth || 0)),
+        height: Math.ceil(Math.max(rect.height, wrapper.scrollHeight || 0))
+      };
       if (dims.width <= 0 || dims.height <= 0){
         throw new Error('Preview is empty after layout.');
       }
