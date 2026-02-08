@@ -2,3 +2,6 @@
 latex_lab_trystero_borked.html
 latex_lab_trystero_chatgpt.html
 /junk
+node_modules/
+package-lock.json
+package.json

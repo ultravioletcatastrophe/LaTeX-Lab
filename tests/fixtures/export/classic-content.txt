@@ -1,0 +1,57 @@
+\text{Classic-mode stress test: every line is treated as math, so use }\texttt{\text{\textbackslash text\{...\}}}\text{ for prose, and keep lots of varied single-line formulas.}
+
+\text{Inline-ish typography checks: punctuation, spacing, and long lines should wrap nicely without clipping.}
+
+e^{i\pi}+1=0
+
+\sqrt{2}\notin\mathbb{Q}
+
+\forall \varepsilon>0\ \exists N\in\mathbb{N}:\ n>N\Rightarrow |x_n-L|<\varepsilon
+
+\lim_{x\to0}\frac{\sin x}{x}=1
+
+\lim_{n\to\infty}\left(1+\frac{1}{n}\right)^n=e
+
+\sum_{k=1}^{n}k=\frac{n(n+1)}{2}
+
+\sum_{k=0}^{n}\binom{n}{k}x^k=(1+x)^n
+
+\binom{n}{k}=\frac{n!}{k!(n-k)!}
+
+\int_{0}^{1}x^2\,dx=\frac{1}{3}
+
+\int_{0}^{\infty}e^{-ax}\cos(bx)\,dx=\frac{a}{a^2+b^2}\quad(a>0)
+
+\frac{d}{dx}\left(\ln x\right)=\frac{1}{x}\quad(x>0)
+
+\nabla\cdot(\nabla \phi)=\Delta \phi
+
+\left\lVert x\right\rVert_2=\sqrt{x^\top x}
+
+\left\lVert x\right\rVert_\infty=\max_i |x_i|
+
+A=\begin{pmatrix}1&2&3\\0&-1&4\\2&1&0\end{pmatrix}
+
+\det(A)=1((-1)\cdot0-4\cdot1)-2(0\cdot0-4\cdot2)+3(0\cdot1-(-1)\cdot2)
+
+x^\top A x=\sum_{i=1}^{n}\sum_{j=1}^{n}a_{ij}x_ix_j
+
+\lambda_{\max}(A)\ge \lambda_{\min}(A)
+
+f(x)=\begin{cases}x^2\sin(1/x),&x\ne0\\0,&x=0\end{cases}
+
+\mathbf{1}_A(x)=\begin{cases}1,&x\in A\\0,&x\notin A\end{cases}
+
+\mathbb{P}(X\le t\mid\mathcal{F}_{\tau\wedge\sigma_{\text{very\_long\_stopping\_time}}})=\mathbb{E}[\mathbf{1}_{\{X\le t\}}\mid\mathcal{F}_{\tau\wedge\sigma_{\text{very\_long\_stopping\_time}}}]
+
+\left(\prod_{j=1}^{m}\left(1+\frac{1}{j}\right)\right)=m+1
+
+\sum_{k=1}^{n}\frac{(-1)^{k+1}}{k}\to \ln 2
+
+\exp\!\left(-\int_{0}^{1}\frac{t^2}{1+t}\,dt\right)\in(0,1)
+
+\text{Long line torture test (wrap + spacing + nested delimiters): }\ \left(\frac{\sum_{k=1}^{n}\left(\frac{k^2+1}{k^2+k+1}\right)}{\prod_{j=1}^{m}\left(1+\frac{1}{j}\right)}\right)\cdot \left(\int_{0}^{\infty}\frac{\cos(bx)}{1+x^2}\,dx\right)\le \left(\frac{n}{m+1}\right)\cdot\left(\frac{\pi}{2}e^{-|b|}\right)
+
+\text{More symbol variety: }\ \angle ABC=\theta,\ \alpha+\beta+\gamma=\pi,\ \exists!\ x\in\mathbb{R}:\ x^2=2,\ \partial_t u=c^2\Delta u
+
+\text{End of classic-mode file.}

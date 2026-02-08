@@ -1,0 +1,31 @@
+This is a dense paragraph of text mixed with inline math such as $e^{i\pi}+1=0$, $\sqrt{2}$, $\frac{a^2+b^2}{c^2}$, and $\sum_{k=1}^{n}k=\frac{n(n+1)}{2}$ to test how prose and formulas coexist in the exported PDF.
+
+$$ f(x)=3 $$
+
+We continue with limits and convergence language, where $(x_n)$ converges to $L$ if for all $\varepsilon>0$ there exists $N\in\mathbb{N}$ such that $|x_n-L|<\varepsilon$ whenever $n>N$.
+
+$$ \lim_{x\to0}\frac{\sin x}{x}=1 $$
+
+Long subscripts and conditional probability should not break layout or spacing.
+
+$$ \mathbb{P}(X\le t\mid\mathcal{F}_{\tau\wedge\sigma_{\text{very\_long\_stopping\_time}}})=p(t) $$
+
+Inline calculus like $\int_{0}^{1}x^2\,dx=\frac13$ appears frequently in text, while displayed equations remain simple and isolated.
+
+$$ \int_{0}^{\infty}e^{-ax}\cos(bx)\,dx=\frac{a}{a^2+b^2} $$
+
+Linear algebra often shows up in compact form inside PDFs.
+
+$$ A=\begin{pmatrix}1&2&3\\0&-1&4\\2&1&0\end{pmatrix} $$
+
+Norms, eigenvalues, and inequalities stress fonts and symbol alignment.
+
+$$ \|x\|_2=\sqrt{x^\top x} $$
+
+Piecewise-defined functions are common and should render cleanly.
+
+$$ f(x)=\begin{cases}x^2\sin(1/x),&x\neq0\\0,&x=0\end{cases} $$
+
+Finally, a long but still single-statement expression to test horizontal spacing and line wrapping behavior.
+
+$$ \prod_{j=1}^{m}\left(1+\frac{1}{j}\right)=m+1 $$
