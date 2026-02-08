@@ -31,5 +31,9 @@ LaTeX Lab is a zero‑setup, in‑browser workspace for typing math and seeing K
 ## Runtime Dependencies
 Static HTML that loads CDN‑hosted KaTeX, html‑to‑image, and html2canvas. No build step required; you just need a secure origin for WebRTC to enable multiplayer.
 
+## Testing
+- Run all tests with `node --test`.
+- Tests live in `tests/katex_backend.test.cjs` and execute `assets/katex_backend.js` in a mocked browser environment (`tests/helpers/load-katex-backend.cjs`).
+
 ## License
 This project is licensed under GPL-3.0. See `LICENSE`.
