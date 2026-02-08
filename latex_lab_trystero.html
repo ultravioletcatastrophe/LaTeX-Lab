@@ -99,9 +99,21 @@
         </label>
       </div>
 
+      <button id="exportBtn" class="menu-button" aria-haspopup="dialog" aria-expanded="false">📤 Export</button>
       <button id="pngBtn">🖼️ PNG</button>
       <button id="pdfBtn">📄 PDF</button>
       <button id="clearBtn" title="Clear editor and saved text">🧹 Clear</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="exportModal">
+    <div class="modal export-modal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <h3 id="exportTitle">Export</h3>
+      <div class="actions export-actions">
+        <button class="menu-button" id="exportPngOption">🖼️ PNG</button>
+        <button class="menu-button" id="exportPdfOption">📄 PDF</button>
+        <button class="menu-button" id="exportCancel">Cancel</button>
+      </div>
     </div>
   </div>
 

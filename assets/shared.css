@@ -74,6 +74,7 @@ body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1
 .menu.open ul{ display:block }
 .menu ul li{ padding:.45rem .75rem; cursor:pointer }
 .menu ul li:hover{ background:var(--stripe-light) }
+#exportBtn{ display:none; }
 
 /* =====================
    Split panes
@@ -284,8 +285,14 @@ body.dark #divider{ color:#bbb }
   .right-controls .dark-switch{
     order:1;
   }
-  .right-controls #pngBtn{
+  .right-controls #exportBtn{
+    display:inline-block;
     order:2;
+    min-width:104px;
+  }
+  .right-controls #pngBtn,
+  .right-controls #pdfBtn{
+    display:none;
   }
 }
 
@@ -375,6 +382,13 @@ body.dark .switch.dark .thumb{ background:#2a2a2a }
 .modal input[type="number"], .modal select { width:100px; padding:.35rem .4rem }
 .modal .preview{ margin-top:.75rem; padding:.75rem; border-radius:8px; border:1px dashed var(--border); font-family:monospace; white-space:pre-wrap; max-height:240px; overflow:auto; }
 .modal .actions{ display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem }
+.export-modal{ width:min(340px,92vw); }
+.export-modal .actions{
+  justify-content:center;
+}
+.export-actions button{
+  min-width:96px;
+}
 
 /* Mixed mode: use CMU Serif for plain text, let KaTeX keep its own fonts */
 body.mixed #preview { font-family: "CMU Serif"; font-weight: 500; font-size:20px; line-height:1.4; }
