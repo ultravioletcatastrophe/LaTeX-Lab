@@ -71,12 +71,16 @@ const snippetsBtn = document.getElementById('snippetsBtn');
 const matrixModal = document.getElementById('matrixModal');
 const mRows = document.getElementById('mRows');
 const mCols = document.getElementById('mCols');
+const mSizeGrid = document.getElementById('mSizeGrid');
+const mSizeValue = document.getElementById('mSizeValue');
 const mType = document.getElementById('mType');
 const matrixPrev = document.getElementById('matrixPrev');
 
 const tableModal = document.getElementById('tableModal');
 const tRows = document.getElementById('tRows');
 const tCols = document.getElementById('tCols');
+const tSizeGrid = document.getElementById('tSizeGrid');
+const tSizeValue = document.getElementById('tSizeValue');
 const tAlign = document.getElementById('tAlign');
 const tBorders = document.getElementById('tBorders');
 const tablePrev = document.getElementById('tablePrev');
@@ -221,6 +225,8 @@ let mobileKeyboardOpenState = false;
 let mobileLockTouchY = null;
 let mobileLockTouchScroller = null;
 let mobileEditorEndPadPx = -1;
+let mobilePreviewLockHeightPx = 0;
+let mobileCursorPadStabilizeRaf = null;
 
 function stopMobileCursorPadRepeat(){
   if (mobileCursorPadRepeatDelay !== null){
@@ -515,40 +521,64 @@ function ensureMobileCursorPad(){
   mobileCursorPad = pad;
 }
 
+function getMobileWorkspaceHeightPx(){
+  const heights = [];
+  const containerHeight = Math.round(preview?.parentElement?.getBoundingClientRect?.().height || 0);
+  if (containerHeight > 0) heights.push(containerHeight);
+  const viewportHeight = Math.round(window?.visualViewport?.height || 0);
+  if (viewportHeight > 0) heights.push(viewportHeight);
+  if (!heights.length) return 0;
+  return Math.min(...heights);
+}
+
+function computeMobilePreviewLockHeightPx(){
+  if (!preview) return 0;
+  const workspaceHeight = getMobileWorkspaceHeightPx();
+  if (workspaceHeight <= 0) return 0;
+  const maxPreviewHeight = Math.max(0, workspaceHeight - MOBILE_EDITOR_MIN_VISIBLE_HEIGHT_PX);
+  if (maxPreviewHeight <= 0) return 0;
+  const minPreviewHeight = Math.min(MOBILE_PREVIEW_MIN_LOCK_HEIGHT_PX, maxPreviewHeight);
+  const currentPreviewHeight = Math.round(preview.getBoundingClientRect().height || 0);
+  const fallbackPreviewHeight = Math.round(workspaceHeight * 0.46);
+  const basePreviewHeight = currentPreviewHeight > 0 ? currentPreviewHeight : fallbackPreviewHeight;
+  return Math.max(minPreviewHeight, Math.min(basePreviewHeight, maxPreviewHeight));
+}
+
 function updateMobileCursorPad(){
   if (!editor) return;
   const keyboardInset = getMobileKeyboardInsetPx();
+  const wasOpen = mobileKeyboardOpenState;
   const show = isMobileLayout() && document.activeElement === editor && isMobileKeyboardLikelyOpen();
 
   if (show && preview){
-    const container = preview.parentElement;
-    const currentPreviewHeight = Math.round(preview.getBoundingClientRect().height || 0);
-    const containerHeight = Math.round(container?.getBoundingClientRect?.().height || 0);
-    let lockHeight = currentPreviewHeight;
-
-    if (containerHeight > 0){
-      const maxPreviewHeight = Math.max(0, containerHeight - MOBILE_EDITOR_MIN_VISIBLE_HEIGHT_PX);
-      if (maxPreviewHeight > 0){
-        const minPreviewHeight = Math.min(MOBILE_PREVIEW_MIN_LOCK_HEIGHT_PX, maxPreviewHeight);
-        lockHeight = Math.max(minPreviewHeight, Math.min(lockHeight, maxPreviewHeight));
-      } else {
-        lockHeight = 0;
-      }
-    }
-
+    const lockHeight = computeMobilePreviewLockHeightPx();
     if (lockHeight > 0) {
-      document.body.style.setProperty('--mobile-preview-lock-height', `${Math.round(lockHeight)}px`);
+      mobilePreviewLockHeightPx = Math.round(lockHeight);
+      document.body.style.setProperty('--mobile-preview-lock-height', `${mobilePreviewLockHeightPx}px`);
+    } else if (mobilePreviewLockHeightPx > 0){
+      document.body.style.setProperty('--mobile-preview-lock-height', `${mobilePreviewLockHeightPx}px`);
     } else {
       document.body.style.removeProperty('--mobile-preview-lock-height');
     }
   }
 
-  if (!show && mobileKeyboardOpenState){
+  if (!show && wasOpen){
     document.body.style.removeProperty('--mobile-preview-lock-height');
+    mobilePreviewLockHeightPx = 0;
+  }
+  if (!show && mobileCursorPadStabilizeRaf !== null){
+    cancelAnimationFrame(mobileCursorPadStabilizeRaf);
+    mobileCursorPadStabilizeRaf = null;
   }
   mobileKeyboardOpenState = show;
   document.body.classList.toggle('mobile-keyboard-open', show);
   if (show) keepWindowTopPinned();
+  if (show && !wasOpen && mobileCursorPadStabilizeRaf === null){
+    mobileCursorPadStabilizeRaf = requestAnimationFrame(() => {
+      mobileCursorPadStabilizeRaf = null;
+      if (isMobileViewportLockActive()) updateMobileCursorPad();
+    });
+  }
   updateMobileEditorEndPad();
   if (mobileCursorPad){
     mobileCursorPad.style.setProperty('--mobile-keyboard-inset', `${keyboardInset}px`);
@@ -680,9 +710,9 @@ window.addEventListener('orientationchange', () => setTimeout(updateMobileCursor
 
 if (typeof window !== 'undefined' && window.visualViewport){
   const handleViewportShift = () => {
-    if (document.activeElement === editor && mobileTopLockRaf !== null){
+    if (isMobileLayout() && document.activeElement === editor){
       keepWindowTopPinned();
-      scheduleMobileTopLock(120);
+      scheduleMobileTopLock(240);
     }
     updateMobileCursorPad();
   };
@@ -3295,8 +3325,408 @@ if (ENABLE_COLLAB) {
 /* =====================
    Snippets (matrix / table / cases)
    ===================== */
-function openMatrix(){ updateMatrixPreview(); matrixModal.classList.add('show'); }
-function openTable(){ updateTablePreview(); tableModal.classList.add('show'); }
+const MATRIX_SIZE_MIN = 1;
+const MATRIX_SIZE_MAX_DESKTOP = 20;
+const TABLE_ROWS_MIN = 1;
+const TABLE_ROWS_MAX_DESKTOP = 20;
+const TABLE_COLS_MIN = 1;
+const TABLE_COLS_MAX_DESKTOP = 20;
+const MOBILE_GRID_SIZE_MAX = 10;
+let matrixGridPointerId = null;
+let matrixSizeHover = null;
+let tableGridPointerId = null;
+let tableSizeHover = null;
+let matrixPreviewUpdateRaf = null;
+let tablePreviewUpdateRaf = null;
+
+function capGridMaxForLayout(max){
+  if (isMobileLayout()) return Math.min(max, MOBILE_GRID_SIZE_MAX);
+  return max;
+}
+
+function getMatrixSizeMax(){
+  return capGridMaxForLayout(MATRIX_SIZE_MAX_DESKTOP);
+}
+
+function getTableRowsMax(){
+  return capGridMaxForLayout(TABLE_ROWS_MAX_DESKTOP);
+}
+
+function getTableColsMax(){
+  return capGridMaxForLayout(TABLE_COLS_MAX_DESKTOP);
+}
+
+function elementHasClass(el, className){
+  if (!(el instanceof Element)) return false;
+  if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains(className)) return true;
+  const raw = String(el.className || '').trim();
+  if (!raw) return false;
+  return raw.split(/\s+/).includes(className);
+}
+
+function findGridCellFromNode(grid, className, node){
+  if (!(node instanceof Element)) return null;
+  let current = node;
+  while (current){
+    if (elementHasClass(current, className) && grid && grid.contains(current)) return current;
+    current = current.parentElement;
+  }
+  return null;
+}
+
+function resolveCellFromEvent(grid, className, event){
+  const directCell = findGridCellFromNode(grid, className, event?.target);
+  if (directCell) return directCell;
+  if (typeof document?.elementFromPoint !== 'function') return null;
+  if (!Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) return null;
+  const probed = document.elementFromPoint(event.clientX, event.clientY);
+  return findGridCellFromNode(grid, className, probed);
+}
+
+function getMatrixDimensions(){
+  const max = getMatrixSizeMax();
+  const rows = clampInt(mRows?.value ?? 3, MATRIX_SIZE_MIN, max);
+  const cols = clampInt(mCols?.value ?? 3, MATRIX_SIZE_MIN, max);
+  return { rows, cols };
+}
+
+function setMatrixDimensions(rows, cols){
+  const max = getMatrixSizeMax();
+  const nextRows = clampInt(rows, MATRIX_SIZE_MIN, max);
+  const nextCols = clampInt(cols, MATRIX_SIZE_MIN, max);
+  if (mRows) mRows.value = String(nextRows);
+  if (mCols) mCols.value = String(nextCols);
+  return { rows: nextRows, cols: nextCols };
+}
+
+function getMatrixSizeFromEvent(event){
+  const cell = resolveCellFromEvent(mSizeGrid, 'matrix-size-cell', event);
+  if (!cell) return null;
+  const max = getMatrixSizeMax();
+  return {
+    rows: clampInt(cell.dataset.rows, MATRIX_SIZE_MIN, max),
+    cols: clampInt(cell.dataset.cols, MATRIX_SIZE_MIN, max)
+  };
+}
+
+function updateMatrixSizeIndicator(rows, cols){
+  if (mSizeValue) mSizeValue.textContent = `${rows} × ${cols}`;
+}
+
+function renderMatrixSizeGridState(){
+  if (!mSizeGrid) return;
+  const { rows: selectedRows, cols: selectedCols } = getMatrixDimensions();
+  const activeRows = matrixSizeHover ? matrixSizeHover.rows : selectedRows;
+  const activeCols = matrixSizeHover ? matrixSizeHover.cols : selectedCols;
+  updateMatrixSizeIndicator(activeRows, activeCols);
+  for (const cell of Array.from(mSizeGrid.querySelectorAll('.matrix-size-cell'))){
+    const cellRows = Number(cell.dataset.rows || 0);
+    const cellCols = Number(cell.dataset.cols || 0);
+    const inActiveRect = cellRows <= activeRows && cellCols <= activeCols;
+    const isSelectedCorner = cellRows === selectedRows && cellCols === selectedCols;
+    cell.classList.toggle('active', inActiveRect);
+    cell.classList.toggle('selected', isSelectedCorner);
+  }
+}
+
+function clearMatrixGridHover(){
+  if (!matrixSizeHover) return;
+  matrixSizeHover = null;
+  renderMatrixSizeGridState();
+}
+
+function scheduleMatrixPreviewUpdate(){
+  if (matrixPreviewUpdateRaf !== null) return;
+  matrixPreviewUpdateRaf = requestAnimationFrame(() => {
+    matrixPreviewUpdateRaf = null;
+    updateMatrixPreview();
+  });
+}
+
+function flushMatrixPreviewUpdate(){
+  if (matrixPreviewUpdateRaf !== null){
+    cancelAnimationFrame(matrixPreviewUpdateRaf);
+    matrixPreviewUpdateRaf = null;
+  }
+  updateMatrixPreview();
+}
+
+function commitMatrixDimensions(rows, cols, options = {}){
+  const prev = getMatrixDimensions();
+  const next = setMatrixDimensions(rows, cols);
+  const changed = next.rows !== prev.rows || next.cols !== prev.cols;
+  matrixSizeHover = null;
+  if (changed || options.forceRender) renderMatrixSizeGridState();
+  if (changed || options.forcePreview){
+    if (options.deferPreview) scheduleMatrixPreviewUpdate();
+    else flushMatrixPreviewUpdate();
+  }
+  return { ...next, changed };
+}
+
+function ensureMatrixSizeGrid(){
+  if (!mSizeGrid) return;
+  const max = getMatrixSizeMax();
+  if (mSizeGrid.dataset.ready === '1' && Number(mSizeGrid.dataset.max || 0) === max) return;
+  mSizeGrid.replaceChildren();
+  mSizeGrid.style.setProperty('--size-grid-cols', String(max));
+  for (let row = MATRIX_SIZE_MIN; row <= max; row++){
+    for (let col = MATRIX_SIZE_MIN; col <= max; col++){
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'matrix-size-cell';
+      cell.dataset.rows = String(row);
+      cell.dataset.cols = String(col);
+      cell.setAttribute('aria-label', `${row} by ${col}`);
+      cell.setAttribute('tabindex', '-1');
+      mSizeGrid.appendChild(cell);
+    }
+  }
+  mSizeGrid.dataset.ready = '1';
+  mSizeGrid.dataset.max = String(max);
+
+  if (mSizeGrid.dataset.bound === '1') return;
+  mSizeGrid.dataset.bound = '1';
+
+  mSizeGrid.addEventListener('pointerdown', (event) => {
+    const size = getMatrixSizeFromEvent(event);
+    if (!size) return;
+    matrixGridPointerId = event.pointerId;
+    commitMatrixDimensions(size.rows, size.cols, { deferPreview: true, forceRender: true });
+    if (typeof mSizeGrid.setPointerCapture === 'function'){
+      try { mSizeGrid.setPointerCapture(event.pointerId); } catch(_) {}
+    }
+    event.preventDefault();
+  });
+
+  mSizeGrid.addEventListener('pointermove', (event) => {
+    const size = getMatrixSizeFromEvent(event);
+    if (!size){
+      return;
+    }
+    if (matrixGridPointerId !== null && event.pointerId === matrixGridPointerId){
+      commitMatrixDimensions(size.rows, size.cols, { deferPreview: true });
+      return;
+    }
+    matrixSizeHover = size;
+    renderMatrixSizeGridState();
+  });
+
+  mSizeGrid.addEventListener('pointerleave', () => {
+    if (matrixGridPointerId === null) clearMatrixGridHover();
+  });
+  mSizeGrid.addEventListener('pointerup', () => {
+    matrixGridPointerId = null;
+    clearMatrixGridHover();
+    flushMatrixPreviewUpdate();
+  });
+  mSizeGrid.addEventListener('pointercancel', () => {
+    matrixGridPointerId = null;
+    clearMatrixGridHover();
+    flushMatrixPreviewUpdate();
+  });
+  mSizeGrid.addEventListener('lostpointercapture', () => {
+    matrixGridPointerId = null;
+    clearMatrixGridHover();
+    flushMatrixPreviewUpdate();
+  });
+  mSizeGrid.addEventListener('click', (event) => {
+    const size = getMatrixSizeFromEvent(event);
+    if (!size) return;
+    commitMatrixDimensions(size.rows, size.cols);
+  });
+}
+
+function syncMatrixUiFromInputs(){
+  const { rows, cols } = setMatrixDimensions(mRows?.value ?? 3, mCols?.value ?? 3);
+  matrixSizeHover = null;
+  updateMatrixSizeIndicator(rows, cols);
+  renderMatrixSizeGridState();
+  flushMatrixPreviewUpdate();
+}
+
+function openMatrix(){
+  ensureMatrixSizeGrid();
+  syncMatrixUiFromInputs();
+  if (matrixModal) matrixModal.classList.add('show');
+}
+
+function getTableDimensions(){
+  const rowsMax = getTableRowsMax();
+  const colsMax = getTableColsMax();
+  const rows = clampInt(tRows?.value ?? 3, TABLE_ROWS_MIN, rowsMax);
+  const cols = clampInt(tCols?.value ?? 3, TABLE_COLS_MIN, colsMax);
+  return { rows, cols };
+}
+
+function setTableDimensions(rows, cols){
+  const rowsMax = getTableRowsMax();
+  const colsMax = getTableColsMax();
+  const nextRows = clampInt(rows, TABLE_ROWS_MIN, rowsMax);
+  const nextCols = clampInt(cols, TABLE_COLS_MIN, colsMax);
+  if (tRows) tRows.value = String(nextRows);
+  if (tCols) tCols.value = String(nextCols);
+  return { rows: nextRows, cols: nextCols };
+}
+
+function getTableSizeFromEvent(event){
+  const cell = resolveCellFromEvent(tSizeGrid, 'table-size-cell', event);
+  if (!cell) return null;
+  const rowsMax = getTableRowsMax();
+  const colsMax = getTableColsMax();
+  return {
+    rows: clampInt(cell.dataset.rows, TABLE_ROWS_MIN, rowsMax),
+    cols: clampInt(cell.dataset.cols, TABLE_COLS_MIN, colsMax)
+  };
+}
+
+function updateTableSizeIndicator(rows, cols){
+  if (tSizeValue) tSizeValue.textContent = `${rows} × ${cols}`;
+}
+
+function renderTableSizeGridState(){
+  if (!tSizeGrid) return;
+  const { rows: selectedRows, cols: selectedCols } = getTableDimensions();
+  const activeRows = tableSizeHover ? tableSizeHover.rows : selectedRows;
+  const activeCols = tableSizeHover ? tableSizeHover.cols : selectedCols;
+  updateTableSizeIndicator(activeRows, activeCols);
+  for (const cell of Array.from(tSizeGrid.querySelectorAll('.table-size-cell'))){
+    const cellRows = Number(cell.dataset.rows || 0);
+    const cellCols = Number(cell.dataset.cols || 0);
+    const inActiveRect = cellRows <= activeRows && cellCols <= activeCols;
+    const isSelectedCorner = cellRows === selectedRows && cellCols === selectedCols;
+    cell.classList.toggle('active', inActiveRect);
+    cell.classList.toggle('selected', isSelectedCorner);
+  }
+}
+
+function clearTableGridHover(){
+  if (!tableSizeHover) return;
+  tableSizeHover = null;
+  renderTableSizeGridState();
+}
+
+function scheduleTablePreviewUpdate(){
+  if (tablePreviewUpdateRaf !== null) return;
+  tablePreviewUpdateRaf = requestAnimationFrame(() => {
+    tablePreviewUpdateRaf = null;
+    updateTablePreview();
+  });
+}
+
+function flushTablePreviewUpdate(){
+  if (tablePreviewUpdateRaf !== null){
+    cancelAnimationFrame(tablePreviewUpdateRaf);
+    tablePreviewUpdateRaf = null;
+  }
+  updateTablePreview();
+}
+
+function commitTableDimensions(rows, cols, options = {}){
+  const prev = getTableDimensions();
+  const next = setTableDimensions(rows, cols);
+  const changed = next.rows !== prev.rows || next.cols !== prev.cols;
+  tableSizeHover = null;
+  if (changed || options.forceRender) renderTableSizeGridState();
+  if (changed || options.forcePreview){
+    if (options.deferPreview) scheduleTablePreviewUpdate();
+    else flushTablePreviewUpdate();
+  }
+  return { ...next, changed };
+}
+
+function ensureTableSizeGrid(){
+  if (!tSizeGrid) return;
+  const rowsMax = getTableRowsMax();
+  const colsMax = getTableColsMax();
+  if (
+    tSizeGrid.dataset.ready === '1'
+    && Number(tSizeGrid.dataset.rowsMax || 0) === rowsMax
+    && Number(tSizeGrid.dataset.colsMax || 0) === colsMax
+  ) return;
+  tSizeGrid.replaceChildren();
+  tSizeGrid.style.setProperty('--size-grid-cols', String(colsMax));
+  for (let row = TABLE_ROWS_MIN; row <= rowsMax; row++){
+    for (let col = TABLE_COLS_MIN; col <= colsMax; col++){
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'matrix-size-cell table-size-cell';
+      cell.dataset.rows = String(row);
+      cell.dataset.cols = String(col);
+      cell.setAttribute('aria-label', `${row} by ${col}`);
+      cell.setAttribute('tabindex', '-1');
+      tSizeGrid.appendChild(cell);
+    }
+  }
+  tSizeGrid.dataset.ready = '1';
+  tSizeGrid.dataset.rowsMax = String(rowsMax);
+  tSizeGrid.dataset.colsMax = String(colsMax);
+
+  if (tSizeGrid.dataset.bound === '1') return;
+  tSizeGrid.dataset.bound = '1';
+
+  tSizeGrid.addEventListener('pointerdown', (event) => {
+    const size = getTableSizeFromEvent(event);
+    if (!size) return;
+    tableGridPointerId = event.pointerId;
+    commitTableDimensions(size.rows, size.cols, { deferPreview: true, forceRender: true });
+    if (typeof tSizeGrid.setPointerCapture === 'function'){
+      try { tSizeGrid.setPointerCapture(event.pointerId); } catch(_) {}
+    }
+    event.preventDefault();
+  });
+
+  tSizeGrid.addEventListener('pointermove', (event) => {
+    const size = getTableSizeFromEvent(event);
+    if (!size){
+      return;
+    }
+    if (tableGridPointerId !== null && event.pointerId === tableGridPointerId){
+      commitTableDimensions(size.rows, size.cols, { deferPreview: true });
+      return;
+    }
+    tableSizeHover = size;
+    renderTableSizeGridState();
+  });
+
+  tSizeGrid.addEventListener('pointerleave', () => {
+    if (tableGridPointerId === null) clearTableGridHover();
+  });
+  tSizeGrid.addEventListener('pointerup', () => {
+    tableGridPointerId = null;
+    clearTableGridHover();
+    flushTablePreviewUpdate();
+  });
+  tSizeGrid.addEventListener('pointercancel', () => {
+    tableGridPointerId = null;
+    clearTableGridHover();
+    flushTablePreviewUpdate();
+  });
+  tSizeGrid.addEventListener('lostpointercapture', () => {
+    tableGridPointerId = null;
+    clearTableGridHover();
+    flushTablePreviewUpdate();
+  });
+  tSizeGrid.addEventListener('click', (event) => {
+    const size = getTableSizeFromEvent(event);
+    if (!size) return;
+    commitTableDimensions(size.rows, size.cols);
+  });
+}
+
+function syncTableUiFromInputs(){
+  const { rows, cols } = setTableDimensions(tRows?.value ?? 3, tCols?.value ?? 3);
+  tableSizeHover = null;
+  updateTableSizeIndicator(rows, cols);
+  renderTableSizeGridState();
+  flushTablePreviewUpdate();
+}
+
+function openTable(){
+  ensureTableSizeGrid();
+  syncTableUiFromInputs();
+  if (tableModal) tableModal.classList.add('show');
+}
 
 function matrixPreviewText(r, c, type){
   const rows = Array.from({ length: r }, () => Array.from({ length: c }, () => '◻').join(' & ')).join(' \\\\ ');
@@ -3307,12 +3737,14 @@ function matrixInsertText(r, c, type){
   return `\\begin{${type}} ${rows} \\end{${type}}`;
 }
 function updateMatrixPreview(){
-  const r = clampInt(mRows.value, 1, 20), c = clampInt(mCols.value, 1, 20);
-  matrixPrev.textContent = matrixPreviewText(r, c, mType.value);
+  const { rows: r, cols: c } = getMatrixDimensions();
+  const type = mType?.value || 'pmatrix';
+  matrixPrev.textContent = matrixPreviewText(r, c, type);
 }
 function insertMatrix(){
-  const r = clampInt(mRows.value, 1, 20), c = clampInt(mCols.value, 1, 20);
-  const core = matrixInsertText(r, c, mType.value);
+  const { rows: r, cols: c } = getMatrixDimensions();
+  const type = mType?.value || 'pmatrix';
+  const core = matrixInsertText(r, c, type);
   const inMixed = document.body.classList.contains('mixed');
   const snippet = inMixed ? `$$${core}$$` : core;
   insertAtCursor(snippet);
@@ -3327,9 +3759,12 @@ function insertCases(){
   snippetsMenu?.classList.remove('open');
 }
 
-mRows?.addEventListener('input', updateMatrixPreview);
-mCols?.addEventListener('input', updateMatrixPreview);
-mType?.addEventListener('change', updateMatrixPreview);
+mRows?.addEventListener('input', syncMatrixUiFromInputs);
+mCols?.addEventListener('input', syncMatrixUiFromInputs);
+mType?.addEventListener('change', () => {
+  updateMatrixPreview();
+  renderMatrixSizeGridState();
+});
 
 function arrayColSpec(align, cols, borders){
   let spec = align.repeat(cols);
@@ -3370,23 +3805,33 @@ function tableInsertText(r, c, align, borders){
 }
 
 function updateTablePreview(){
-  const r = clampInt(tRows.value, 1, 40), c = clampInt(tCols.value, 1, 20);
-  tablePrev.textContent = tablePreviewText(r, c, tAlign.value, tBorders.value);
+  const { rows: r, cols: c } = getTableDimensions();
+  const align = tAlign?.value || 'c';
+  const borders = tBorders?.value || 'none';
+  tablePrev.textContent = tablePreviewText(r, c, align, borders);
 }
 
 function insertTable(){
-  const r = clampInt(tRows.value, 1, 40), c = clampInt(tCols.value, 1, 20);
-  const core = tableInsertText(r, c, tAlign.value, tBorders.value);
+  const { rows: r, cols: c } = getTableDimensions();
+  const align = tAlign?.value || 'c';
+  const borders = tBorders?.value || 'none';
+  const core = tableInsertText(r, c, align, borders);
   const inMixed = document.body.classList.contains('mixed');
   const snippet = inMixed ? `$$${core}$$` : core;
   insertAtCursor(snippet);
   tableModal.classList.remove('show');
 }
 
-tRows?.addEventListener('input', updateTablePreview);
-tCols?.addEventListener('input', updateTablePreview);
-tAlign?.addEventListener('change', updateTablePreview);
-tBorders?.addEventListener('change', updateTablePreview);
+tRows?.addEventListener('input', syncTableUiFromInputs);
+tCols?.addEventListener('input', syncTableUiFromInputs);
+tAlign?.addEventListener('change', () => {
+  updateTablePreview();
+  renderTableSizeGridState();
+});
+tBorders?.addEventListener('change', () => {
+  updateTablePreview();
+  renderTableSizeGridState();
+});
 
 function clampInt(v, min, max){
   v = parseInt(v || min, 10);

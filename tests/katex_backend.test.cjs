@@ -397,6 +397,138 @@ test('render stick-to-bottom behavior differs by desktop vs first mobile render'
   assert.equal(mobilePreview.scrollTop, 600);
 });
 
+test('mobile keyboard-open preview lock clamps to visual viewport height', () => {
+  const app = loadBackend({ mobile: true });
+  const editor = app.elements.get('editor');
+  const preview = app.elements.get('preview');
+
+  app.window.innerHeight = 900;
+  app.window.visualViewport.height = 260;
+  app.window.visualViewport.offsetTop = 0;
+  preview.clientHeight = 420;
+
+  editor.focus();
+  editor.dispatchEvent({ type: 'focus', target: editor });
+
+  assert.equal(app.document.body.classList.contains('mobile-keyboard-open'), true);
+  assert.equal(app.document.body.style['--mobile-preview-lock-height'], '164px');
+});
+
+test('mobile viewport shift re-pins top even after initial focus lock expires', () => {
+  const app = loadBackend({ mobile: true });
+  const editor = app.elements.get('editor');
+
+  app.window.innerHeight = 900;
+  app.window.visualViewport.height = 700;
+  app.window.visualViewport.offsetTop = 0;
+
+  editor.focus();
+  editor.dispatchEvent({ type: 'focus', target: editor });
+  app.window.scrollY = 180;
+
+  app.window.visualViewport.dispatchEvent({ type: 'resize', target: app.window.visualViewport });
+
+  assert.equal(app.window.scrollY, 0);
+});
+
+test('matrix and table size grids cap at 10x10 on mobile', () => {
+  const app = loadBackend({ mobile: true });
+  const openMatrixGen = app.elements.get('openMatrixGen');
+  const openTableGen = app.elements.get('openTableGen');
+  const mRows = app.elements.get('mRows');
+  const mCols = app.elements.get('mCols');
+  const tRows = app.elements.get('tRows');
+  const tCols = app.elements.get('tCols');
+  const mSizeGrid = app.elements.get('mSizeGrid');
+  const tSizeGrid = app.elements.get('tSizeGrid');
+
+  mRows.value = '18';
+  mCols.value = '17';
+  tRows.value = '14';
+  tCols.value = '16';
+
+  openMatrixGen.dispatchEvent({ type: 'click', target: openMatrixGen });
+  openTableGen.dispatchEvent({ type: 'click', target: openTableGen });
+
+  assert.equal(mRows.value, '10');
+  assert.equal(mCols.value, '10');
+  assert.equal(tRows.value, '10');
+  assert.equal(tCols.value, '10');
+  assert.equal(mSizeGrid.childNodes.length, 100);
+  assert.equal(tSizeGrid.childNodes.length, 100);
+});
+
+test('matrix drag keeps last selected size when pointer target is grid container', () => {
+  const app = loadBackend({ mobile: false });
+  const openMatrixGen = app.elements.get('openMatrixGen');
+  const mSizeGrid = app.elements.get('mSizeGrid');
+  const mRows = app.elements.get('mRows');
+  const mCols = app.elements.get('mCols');
+
+  openMatrixGen.dispatchEvent({ type: 'click', target: openMatrixGen });
+
+  const matrixCell = Array.from(mSizeGrid.childNodes).find((cell) => {
+    return cell && cell.dataset && cell.dataset.rows === '6' && cell.dataset.cols === '7';
+  });
+  assert.ok(matrixCell);
+
+  mSizeGrid.dispatchEvent({
+    type: 'pointerdown',
+    target: matrixCell,
+    pointerId: 1,
+    clientX: 120,
+    clientY: 120
+  });
+  assert.equal(mRows.value, '6');
+  assert.equal(mCols.value, '7');
+
+  mSizeGrid.dispatchEvent({
+    type: 'pointermove',
+    target: mSizeGrid,
+    pointerId: 1,
+    clientX: 121,
+    clientY: 121
+  });
+  assert.equal(mRows.value, '6');
+  assert.equal(mCols.value, '7');
+});
+
+test('matrix hover keeps last highlighted size while pointer moves over grid gaps', () => {
+  const app = loadBackend({ mobile: false });
+  const openMatrixGen = app.elements.get('openMatrixGen');
+  const mSizeGrid = app.elements.get('mSizeGrid');
+  const mRows = app.elements.get('mRows');
+  const mCols = app.elements.get('mCols');
+  const mSizeValue = app.elements.get('mSizeValue');
+
+  openMatrixGen.dispatchEvent({ type: 'click', target: openMatrixGen });
+
+  const matrixCell = Array.from(mSizeGrid.childNodes).find((cell) => {
+    return cell && cell.dataset && cell.dataset.rows === '4' && cell.dataset.cols === '6';
+  });
+  assert.ok(matrixCell);
+
+  mSizeGrid.dispatchEvent({
+    type: 'pointermove',
+    target: matrixCell,
+    clientX: 90,
+    clientY: 90
+  });
+  assert.equal(mSizeValue.textContent, '4 × 6');
+  assert.equal(mRows.value, '3');
+  assert.equal(mCols.value, '3');
+
+  mSizeGrid.dispatchEvent({
+    type: 'pointermove',
+    target: mSizeGrid,
+    clientX: 91,
+    clientY: 91
+  });
+  assert.equal(mSizeValue.textContent, '4 × 6');
+  assert.equal(mRows.value, '3');
+  assert.equal(mCols.value, '3');
+});
+
 test('collab ignores stale clock payloads from the same peer', async () => {
   const rig = createFakeJoinRoom();
   const app = loadBackend({
