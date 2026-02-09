@@ -249,7 +249,7 @@ body.dark #divider{ color:#bbb }
   }
   body.mobile-keyboard-open #preview{
     flex:0 0 var(--mobile-preview-lock-height, 46dvh);
-    min-height:140px;
+    min-height:96px;
   }
   body.mobile-keyboard-open #leftPane{
     flex:1 1 auto;

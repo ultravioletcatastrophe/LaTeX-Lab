@@ -103,6 +103,8 @@ syncDividerForLayout();
 
 let mobileTopLockRaf = null;
 let mobileTopLockUntil = 0;
+const MOBILE_EDITOR_TAP_MOVE_THRESHOLD_PX = 10;
+let mobileEditorTouchGesture = null;
 
 function stopMobileTopLock(){
   mobileTopLockUntil = 0;
@@ -140,16 +142,77 @@ function scheduleMobileTopLock(durationMs = 600){
 if (editor){
   editor.addEventListener('focus', () => scheduleMobileTopLock(450));
   editor.addEventListener('click', () => scheduleMobileTopLock(220));
-  editor.addEventListener('touchstart', () => {
+  editor.addEventListener('touchstart', (event) => {
     if (!isMobileLayout()) return;
-    try { editor.focus({ preventScroll: true }); } catch(e) {}
+    if (!event.touches || event.touches.length !== 1){
+      mobileEditorTouchGesture = null;
+      return;
+    }
+    const touch = event.touches[0];
+    mobileEditorTouchGesture = {
+      id: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      moved: false,
+      focusedAtStart: document.activeElement === editor
+    };
+    keepWindowTopPinned();
+  }, { passive: true });
+  editor.addEventListener('touchmove', (event) => {
+    if (!isMobileLayout()) return;
+    if (!mobileEditorTouchGesture || !event.touches) return;
+    const gesture = mobileEditorTouchGesture;
+    let trackedTouch = null;
+    for (const touch of Array.from(event.touches)){
+      if (touch.identifier === gesture.id){
+        trackedTouch = touch;
+        break;
+      }
+    }
+    if (!trackedTouch) return;
+    const dx = Math.abs(trackedTouch.clientX - gesture.startX);
+    const dy = Math.abs(trackedTouch.clientY - gesture.startY);
+    if (dx <= MOBILE_EDITOR_TAP_MOVE_THRESHOLD_PX && dy <= MOBILE_EDITOR_TAP_MOVE_THRESHOLD_PX) return;
+    gesture.moved = true;
+    if (!gesture.focusedAtStart && document.activeElement === editor){
+      editor.blur();
+      stopMobileTopLock();
+    }
+  }, { passive: true });
+  editor.addEventListener('touchend', (event) => {
+    if (!isMobileLayout()) return;
+    if (!mobileEditorTouchGesture){
+      return;
+    }
+    const gesture = mobileEditorTouchGesture;
+    let finished = false;
+    if (event.changedTouches){
+      for (const touch of Array.from(event.changedTouches)){
+        if (touch.identifier === gesture.id){
+          finished = true;
+          break;
+        }
+      }
+    }
+    if (!finished) return;
+    mobileEditorTouchGesture = null;
+    if (gesture.moved) return;
+    if (document.activeElement !== editor){
+      try { editor.focus({ preventScroll: true }); }
+      catch(e) { try { editor.focus(); } catch(_) {} }
+    }
     keepWindowTopPinned();
     scheduleMobileTopLock(450);
+  }, { passive: true });
+  editor.addEventListener('touchcancel', () => {
+    mobileEditorTouchGesture = null;
   }, { passive: true });
   editor.addEventListener('blur', stopMobileTopLock);
 }
 
 const MOBILE_CURSOR_PAD_KEYBOARD_THRESHOLD = 80;
+const MOBILE_PREVIEW_MIN_LOCK_HEIGHT_PX = 96;
+const MOBILE_EDITOR_MIN_VISIBLE_HEIGHT_PX = 96;
 let mobileCursorPad = null;
 let mobileCursorPadPreferredColumn = null;
 let mobileCursorPadRepeatDelay = null;
@@ -456,12 +519,30 @@ function updateMobileCursorPad(){
   if (!editor) return;
   const keyboardInset = getMobileKeyboardInsetPx();
   const show = isMobileLayout() && document.activeElement === editor && isMobileKeyboardLikelyOpen();
-  if (show && !mobileKeyboardOpenState && preview){
-    const lockHeight = Math.round(preview.getBoundingClientRect().height || 0);
+
+  if (show && preview){
+    const container = preview.parentElement;
+    const currentPreviewHeight = Math.round(preview.getBoundingClientRect().height || 0);
+    const containerHeight = Math.round(container?.getBoundingClientRect?.().height || 0);
+    let lockHeight = currentPreviewHeight;
+
+    if (containerHeight > 0){
+      const maxPreviewHeight = Math.max(0, containerHeight - MOBILE_EDITOR_MIN_VISIBLE_HEIGHT_PX);
+      if (maxPreviewHeight > 0){
+        const minPreviewHeight = Math.min(MOBILE_PREVIEW_MIN_LOCK_HEIGHT_PX, maxPreviewHeight);
+        lockHeight = Math.max(minPreviewHeight, Math.min(lockHeight, maxPreviewHeight));
+      } else {
+        lockHeight = 0;
+      }
+    }
+
     if (lockHeight > 0) {
-      document.body.style.setProperty('--mobile-preview-lock-height', `${lockHeight}px`);
+      document.body.style.setProperty('--mobile-preview-lock-height', `${Math.round(lockHeight)}px`);
+    } else {
+      document.body.style.removeProperty('--mobile-preview-lock-height');
     }
   }
+
   if (!show && mobileKeyboardOpenState){
     document.body.style.removeProperty('--mobile-preview-lock-height');
   }
