@@ -529,6 +529,68 @@ test('matrix hover keeps last highlighted size while pointer moves over grid gap
   assert.equal(mCols.value, '3');
 });
 
+test('matrix pointerleave keeps the most recent hovered size selected on desktop', () => {
+  const app = loadBackend({ mobile: false });
+  const openMatrixGen = app.elements.get('openMatrixGen');
+  const mSizeGrid = app.elements.get('mSizeGrid');
+  const mRows = app.elements.get('mRows');
+  const mCols = app.elements.get('mCols');
+  const mSizeValue = app.elements.get('mSizeValue');
+
+  openMatrixGen.dispatchEvent({ type: 'click', target: openMatrixGen });
+
+  const matrixCell = Array.from(mSizeGrid.childNodes).find((cell) => {
+    return cell && cell.dataset && cell.dataset.rows === '5' && cell.dataset.cols === '8';
+  });
+  assert.ok(matrixCell);
+
+  mSizeGrid.dispatchEvent({
+    type: 'pointermove',
+    target: matrixCell,
+    clientX: 112,
+    clientY: 112
+  });
+  assert.equal(mSizeValue.textContent, '5 × 8');
+  assert.equal(mRows.value, '3');
+  assert.equal(mCols.value, '3');
+
+  mSizeGrid.dispatchEvent({ type: 'pointerleave', target: mSizeGrid });
+  assert.equal(mRows.value, '5');
+  assert.equal(mCols.value, '8');
+  assert.equal(mSizeValue.textContent, '5 × 8');
+});
+
+test('table pointerleave keeps the most recent hovered size selected on desktop', () => {
+  const app = loadBackend({ mobile: false });
+  const openTableGen = app.elements.get('openTableGen');
+  const tSizeGrid = app.elements.get('tSizeGrid');
+  const tRows = app.elements.get('tRows');
+  const tCols = app.elements.get('tCols');
+  const tSizeValue = app.elements.get('tSizeValue');
+
+  openTableGen.dispatchEvent({ type: 'click', target: openTableGen });
+
+  const tableCell = Array.from(tSizeGrid.childNodes).find((cell) => {
+    return cell && cell.dataset && cell.dataset.rows === '6' && cell.dataset.cols === '9';
+  });
+  assert.ok(tableCell);
+
+  tSizeGrid.dispatchEvent({
+    type: 'pointermove',
+    target: tableCell,
+    clientX: 118,
+    clientY: 118
+  });
+  assert.equal(tSizeValue.textContent, '6 × 9');
+  assert.equal(tRows.value, '3');
+  assert.equal(tCols.value, '3');
+
+  tSizeGrid.dispatchEvent({ type: 'pointerleave', target: tSizeGrid });
+  assert.equal(tRows.value, '6');
+  assert.equal(tCols.value, '9');
+  assert.equal(tSizeValue.textContent, '6 × 9');
+});
+
 test('collab ignores stale clock payloads from the same peer', async () => {
   const rig = createFakeJoinRoom();
   const app = loadBackend({

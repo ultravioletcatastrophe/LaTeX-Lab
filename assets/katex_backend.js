@@ -3435,6 +3435,12 @@ function clearMatrixGridHover(){
   renderMatrixSizeGridState();
 }
 
+function persistMatrixHoverSelection(){
+  if (!matrixSizeHover || isMobileLayout()) return false;
+  commitMatrixDimensions(matrixSizeHover.rows, matrixSizeHover.cols, { forcePreview: true });
+  return true;
+}
+
 function scheduleMatrixPreviewUpdate(){
   if (matrixPreviewUpdateRaf !== null) return;
   matrixPreviewUpdateRaf = requestAnimationFrame(() => {
@@ -3513,7 +3519,9 @@ function ensureMatrixSizeGrid(){
   });
 
   mSizeGrid.addEventListener('pointerleave', () => {
-    if (matrixGridPointerId === null) clearMatrixGridHover();
+    if (matrixGridPointerId !== null) return;
+    if (persistMatrixHoverSelection()) return;
+    clearMatrixGridHover();
   });
   mSizeGrid.addEventListener('pointerup', () => {
     matrixGridPointerId = null;
@@ -3606,6 +3614,12 @@ function clearTableGridHover(){
   renderTableSizeGridState();
 }
 
+function persistTableHoverSelection(){
+  if (!tableSizeHover || isMobileLayout()) return false;
+  commitTableDimensions(tableSizeHover.rows, tableSizeHover.cols, { forcePreview: true });
+  return true;
+}
+
 function scheduleTablePreviewUpdate(){
   if (tablePreviewUpdateRaf !== null) return;
   tablePreviewUpdateRaf = requestAnimationFrame(() => {
@@ -3690,7 +3704,9 @@ function ensureTableSizeGrid(){
   });
 
   tSizeGrid.addEventListener('pointerleave', () => {
-    if (tableGridPointerId === null) clearTableGridHover();
+    if (tableGridPointerId !== null) return;
+    if (persistTableHoverSelection()) return;
+    clearTableGridHover();
   });
   tSizeGrid.addEventListener('pointerup', () => {
     tableGridPointerId = null;
