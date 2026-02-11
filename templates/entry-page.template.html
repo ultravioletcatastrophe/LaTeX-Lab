@@ -108,12 +108,19 @@
   </div>
 
   <div class="modal-backdrop" id="matrixModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="matrixTitle">
+    <div class="modal matrix-modal" role="dialog" aria-modal="true" aria-labelledby="matrixTitle">
       <h3 id="matrixTitle">Insert Matrix</h3>
-      <div class="row">
-        <label>Rows</label><input type="number" id="mRows" min="1" max="20" value="3">
-        <label>Cols</label><input type="number" id="mCols" min="1" max="20" value="3">
-        <label>Type</label>
+      <div class="matrix-size-picker">
+        <div class="matrix-size-meta">
+          <span class="matrix-size-title">Size</span>
+          <output id="mSizeValue" class="matrix-size-value" aria-live="polite">3 × 3</output>
+        </div>
+        <div id="mSizeGrid" class="matrix-size-grid" role="grid" aria-label="Select matrix size"></div>
+        <input type="hidden" id="mRows" value="3">
+        <input type="hidden" id="mCols" value="3">
+      </div>
+      <div class="row matrix-type-row">
+        <label for="mType">Type</label>
         <select id="mType">
           <option value="pmatrix">pmatrix ( )</option>
           <option value="bmatrix">bmatrix [ ]</option>
@@ -125,24 +132,31 @@
       <div class="preview" id="matrixPrev"></div>
       <div class="actions">
         <button class="menu-button" id="mCancel">Cancel</button>
-        <button class="menu-button" id="mInsert">Insert</button>
+        <button class="menu-button" id="mInsert">📥 Insert</button>
       </div>
     </div>
   </div>
 
   <div class="modal-backdrop" id="tableModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
+    <div class="modal matrix-modal table-modal" role="dialog" aria-modal="true" aria-labelledby="tableTitle">
       <h3 id="tableTitle">Insert Table</h3>
-      <div class="row">
-        <label>Rows</label><input type="number" id="tRows" min="1" max="40" value="3">
-        <label>Cols</label><input type="number" id="tCols" min="1" max="20" value="3">
-        <label>Align</label>
+      <div class="matrix-size-picker table-size-picker">
+        <div class="matrix-size-meta">
+          <span class="matrix-size-title">Size</span>
+          <output id="tSizeValue" class="matrix-size-value" aria-live="polite">3 × 3</output>
+        </div>
+        <div id="tSizeGrid" class="matrix-size-grid table-size-grid" role="grid" aria-label="Select table size"></div>
+        <input type="hidden" id="tRows" value="3">
+        <input type="hidden" id="tCols" value="3">
+      </div>
+      <div class="row table-type-row">
+        <label for="tAlign">Align</label>
         <select id="tAlign">
           <option value="c">center</option>
           <option value="l">left</option>
           <option value="r">right</option>
         </select>
-        <label>Borders</label>
+        <label for="tBorders">Borders</label>
         <select id="tBorders">
           <option value="none">none</option>
           <option value="outer">outer</option>
@@ -152,7 +166,7 @@
       <div class="preview" id="tablePrev"></div>
       <div class="actions">
         <button class="menu-button" id="tCancel">Cancel</button>
-        <button class="menu-button" id="tInsert">Insert</button>
+        <button class="menu-button" id="tInsert">📥 Insert</button>
       </div>
     </div>
   </div>
