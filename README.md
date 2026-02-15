@@ -13,6 +13,13 @@ LaTeX Lab is a zero‑setup, in‑browser workspace for typing math and seeing K
 - Presence pills show participants with friendly color names (xkcd color list + nearest‑match).
 - Local state persists (text, layout, theme, macros, cursor, scroll), so reconnects feel seamless.
 
+## Privacy & Threat Model
+- No app backend stores your document. Single-player content stays in your browser unless you share it.
+- Multiplayer rooms are collaborative by design: anyone with the same room code can read and edit the shared state.
+- Room codes are not authenticated. Treat them as secrets and use hard-to-guess names for private sessions.
+- Collaboration uses third-party relay infrastructure for peer discovery/signaling; network metadata (for example IP/timing) may be visible to those services and peers.
+- Share links encode content and settings in the URL hash. Anyone with that link can read the encoded state.
+
 ## What It Does Well
 - Mixed mode (text + `$inline$` / `$$display$$`) and Classic mode (each line is display math).
 - Side‑by‑side editor + preview with synced line gutters and persistent split widths.

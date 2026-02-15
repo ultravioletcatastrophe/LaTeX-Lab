@@ -12,6 +12,10 @@ const variants = [
     output: 'latex_lab.html',
     values: {
       TITLE: 'LaTeX Lab',
+      META_DESCRIPTION: 'In-browser LaTeX and KaTeX playground with live preview, shortcuts, and PNG/PDF export.',
+      OG_TITLE: 'LaTeX Lab',
+      OG_DESCRIPTION: 'In-browser LaTeX and KaTeX playground with live preview, shortcuts, and PNG/PDF export.',
+      OG_IMAGE: 'https://latex.salon/assets/images/screenshot.png',
       FAVICON_EMOJI: '🧪',
       COLLAB_VENDOR_SCRIPTS: '',
       BODY_CLASS: '',
@@ -39,6 +43,10 @@ const variants = [
     output: 'latex_lab_trystero.html',
     values: {
       TITLE: 'LaTeX Salon',
+      META_DESCRIPTION: 'Multiplayer in-browser LaTeX workspace with peer-to-peer sync, live carets, and PNG/PDF export.',
+      OG_TITLE: 'LaTeX Salon',
+      OG_DESCRIPTION: 'Multiplayer in-browser LaTeX workspace with peer-to-peer sync, live carets, and PNG/PDF export.',
+      OG_IMAGE: 'https://latex.salon/assets/images/screenshot_trystero.png',
       FAVICON_EMOJI: '☕',
       COLLAB_VENDOR_SCRIPTS: `  <script src="/assets/vendor/tinycolor-min.js"></script>
   <script src="/assets/vendor/nearestColor.js"></script>`,
