@@ -917,6 +917,108 @@ test('redo shortcut prevents browser default even when no redo is available', ()
   assert.equal(editor.value, 'stable');
 });
 
+test('redo stack is cleared after a new edit made after undo', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'a';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  editor.value = 'ab';
+  editor.selectionStart = 2;
+  editor.selectionEnd = 2;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'a');
+
+  editor.value = 'a!';
+  editor.selectionStart = 2;
+  editor.selectionEnd = 2;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  const redoResult = editor.dispatchEvent({ type: 'keydown', key: 'y', ctrlKey: true });
+  assert.equal(redoResult, false);
+  assert.equal(editor.value, 'a!');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 2);
+});
+
+test('undo/redo boundaries are safe no-ops', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'x';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, '');
+  assert.equal(editor.selectionStart, 0);
+  assert.equal(editor.selectionEnd, 0);
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, '');
+  assert.equal(editor.selectionStart, 0);
+  assert.equal(editor.selectionEnd, 0);
+
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'x');
+  assert.equal(editor.selectionStart, 1);
+  assert.equal(editor.selectionEnd, 1);
+
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'x');
+  assert.equal(editor.selectionStart, 1);
+  assert.equal(editor.selectionEnd, 1);
+});
+
+test('Ctrl+Shift+Z triggers redo', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'hello';
+  editor.selectionStart = 5;
+  editor.selectionEnd = 5;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  editor.value = 'hello world';
+  editor.selectionStart = 11;
+  editor.selectionEnd = 11;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'hello');
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true, shiftKey: true });
+  assert.equal(editor.value, 'hello world');
+  assert.equal(editor.selectionStart, 11);
+  assert.equal(editor.selectionEnd, 11);
+});
+
+test('undo/redo shortcuts are ignored when editor is not focused', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+
+  editor.value = 'focus';
+  editor.selectionStart = 5;
+  editor.selectionEnd = 5;
+  editor.dispatchEvent({ type: 'input', target: editor });
+  editor.blur();
+
+  const undoResult = editor.dispatchEvent({ type: 'keydown', key: 'z', ctrlKey: true });
+  const redoResult = editor.dispatchEvent({ type: 'keydown', key: 'y', ctrlKey: true });
+  assert.equal(undoResult, true);
+  assert.equal(redoResult, true);
+  assert.equal(editor.value, 'focus');
+});
+
 test('cursor and scroll persistence writes on keyup, input, and click', () => {
   const app = loadBackend();
   const editor = app.elements.get('editor');
