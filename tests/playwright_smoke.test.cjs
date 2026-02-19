@@ -34,6 +34,23 @@ async function withPage(viewport, run) {
   }
 }
 
+async function setEditorValue(page, value, cursor = String(value).length) {
+  await page.evaluate(({ value, cursor }) => {
+    const editor = document.getElementById('editor');
+    editor.value = String(value);
+    editor.selectionStart = Number(cursor);
+    editor.selectionEnd = Number(cursor);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+  }, { value, cursor });
+}
+
+async function getEditorValue(page) {
+  return page.evaluate(() => {
+    const editor = document.getElementById('editor');
+    return editor.value;
+  });
+}
+
 test(
   'mobile export menu toggles modal and aria state',
   {
@@ -98,6 +115,70 @@ test(
       assert.equal(closed.modalOpen, false);
       assert.equal(closed.ariaHidden, 'true');
       assert.equal(closed.ariaExpanded, 'false');
+    });
+  }
+);
+
+test(
+  'real-browser undo/redo shortcuts work across Cmd/Ctrl variants and suppress empty-redo default',
+  {
+    skip: !PLAYWRIGHT_ENABLED || !playwright,
+    timeout: 90000
+  },
+  async (t) => {
+    if (!PLAYWRIGHT_ENABLED) {
+      t.diagnostic(PLAYWRIGHT_HINT);
+      return;
+    }
+    if (!playwright) {
+      t.diagnostic('Playwright is not installed; skipping browser smoke tests.');
+      return;
+    }
+
+    await withPage({ width: 1280, height: 900 }, async (page) => {
+      await page.evaluate(() => {
+        const editor = document.getElementById('editor');
+        window.__redoPrevented = [];
+        editor.addEventListener('keydown', (event) => {
+          const key = String(event.key || '').toLowerCase();
+          const isRedoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'y';
+          if (isRedoShortcut) window.__redoPrevented.push(event.defaultPrevented === true);
+        });
+      });
+
+      await page.click('#editor');
+      await setEditorValue(page, 'alpha');
+      await setEditorValue(page, 'alpha beta');
+
+      await page.keyboard.press('Control+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha');
+
+      await page.keyboard.press('Control+Shift+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha beta');
+
+      await page.keyboard.press('Meta+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha');
+
+      await page.keyboard.press('Meta+Shift+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha beta');
+
+      await page.keyboard.press('Control+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha');
+      await page.keyboard.press('Control+KeyY');
+      assert.equal(await getEditorValue(page), 'alpha beta');
+
+      await page.keyboard.press('Meta+KeyZ');
+      assert.equal(await getEditorValue(page), 'alpha');
+      await page.keyboard.press('Meta+KeyY');
+      assert.equal(await getEditorValue(page), 'alpha beta');
+
+      await page.evaluate(() => { window.__redoPrevented = []; });
+      await page.keyboard.press('Control+KeyY');
+      await page.keyboard.press('Meta+KeyY');
+      assert.equal(await getEditorValue(page), 'alpha beta');
+      const prevented = await page.evaluate(() => Array.from(window.__redoPrevented || []));
+      assert.equal(prevented.length >= 1, true);
+      assert.ok(prevented.every(Boolean));
     });
   }
 );

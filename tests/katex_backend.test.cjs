@@ -644,6 +644,57 @@ test('collab requests sync when incoming delta base length mismatches local text
   assert.ok(room.sent.some((payload) => payload.kind === 'request'));
 });
 
+test('collab remote text apply creates undo boundary and keeps post-remote local undo/redo', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+
+  editor.value = 'local-one';
+  editor.selectionStart = editor.selectionEnd = editor.value.length;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  editor.value = 'local-two';
+  editor.selectionStart = editor.selectionEnd = editor.value.length;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  room.emitState(
+    {
+      kind: 'full',
+      from: 'peer-host',
+      owner: 1,
+      host: 'peer-host',
+      joinedAt: Date.now(),
+      clock: 9,
+      text: 'remote-base',
+      mode: 'mixed'
+    },
+    'peer-host'
+  );
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'remote-base');
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'remote-base');
+
+  editor.value = 'remote-base!';
+  editor.selectionStart = editor.selectionEnd = editor.value.length;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'remote-base');
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'remote-base!');
+});
+
 test('collab macros updates merge by default and replace on save/reset reasons', async () => {
   const rig = createFakeJoinRoom();
   const app = loadBackend({
@@ -1017,6 +1068,71 @@ test('undo/redo shortcuts are ignored when editor is not focused', () => {
   assert.equal(undoResult, true);
   assert.equal(redoResult, true);
   assert.equal(editor.value, 'focus');
+});
+
+test('undo/redo shortcuts are ignored while IME composition is active', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.dispatchEvent({ type: 'compositionstart', target: editor });
+  const undoResult = editor.dispatchEvent({ type: 'keydown', key: 'z', ctrlKey: true });
+  const redoResult = editor.dispatchEvent({ type: 'keydown', key: 'y', ctrlKey: true });
+  editor.dispatchEvent({ type: 'compositionend', target: editor });
+
+  assert.equal(undoResult, true);
+  assert.equal(redoResult, true);
+});
+
+test('IME composition input commits as a single undo/redo step', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'A';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  editor.dispatchEvent({ type: 'compositionstart', target: editor });
+
+  editor.value = 'An';
+  editor.selectionStart = 2;
+  editor.selectionEnd = 2;
+  editor.dispatchEvent({
+    type: 'input',
+    target: editor,
+    inputType: 'insertCompositionText',
+    isComposing: true
+  });
+
+  editor.value = 'Ani';
+  editor.selectionStart = 3;
+  editor.selectionEnd = 3;
+  editor.dispatchEvent({
+    type: 'input',
+    target: editor,
+    inputType: 'insertCompositionText',
+    isComposing: true
+  });
+
+  editor.dispatchEvent({ type: 'compositionend', target: editor });
+
+  editor.value = 'A你';
+  editor.selectionStart = 2;
+  editor.selectionEnd = 2;
+  editor.dispatchEvent({
+    type: 'input',
+    target: editor,
+    inputType: 'insertFromComposition',
+    isComposing: false
+  });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'A');
+
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'A你');
 });
 
 test('cursor and scroll persistence writes on keyup, input, and click', () => {

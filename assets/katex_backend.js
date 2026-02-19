@@ -2889,6 +2889,9 @@ if (ENABLE_COLLAB) {
         render();
         updateAllRemoteCarets();
       }
+      if (textChanged) {
+        checkpointEditorHistoryFromEditor();
+      }
     }
 
     function buildFullPayload() {
@@ -3857,6 +3860,9 @@ function clampInt(v, min, max){
 const EDITOR_HISTORY_MAX_ENTRIES = 400;
 let editorHistory = null;
 let editorHistoryReplaying = false;
+let editorHistoryCompositionActive = false;
+let editorHistoryCompositionDirty = false;
+let editorHistoryCompositionPendingCommit = false;
 
 function cloneEditorSnapshot(snapshot){
   return {
@@ -3885,6 +3891,19 @@ function snapshotsEqual(a, b){
     && a.scrollTop === b.scrollTop;
 }
 
+function resetEditorHistoryCompositionState(){
+  editorHistoryCompositionActive = false;
+  editorHistoryCompositionDirty = false;
+  editorHistoryCompositionPendingCommit = false;
+}
+
+function isCompositionInputEvent(event){
+  if (event?.isComposing === true) return true;
+  const type = typeof event?.inputType === 'string' ? event.inputType : '';
+  if (type === 'insertCompositionText' || type === 'deleteCompositionText') return true;
+  return editorHistoryCompositionActive;
+}
+
 function resolveTravelsFactory(){
   const direct = window?.createTravels;
   if (typeof direct === 'function') return direct;
@@ -3896,7 +3915,8 @@ function resolveTravelsFactory(){
 function createFallbackEditorHistory(initialSnapshot){
   const state = {
     entries: [cloneEditorSnapshot(initialSnapshot)],
-    index: 0
+    index: 0,
+    minIndex: 0
   };
 
   return {
@@ -3911,11 +3931,15 @@ function createFallbackEditorHistory(initialSnapshot){
       if (state.entries.length > EDITOR_HISTORY_MAX_ENTRIES){
         const overflow = state.entries.length - EDITOR_HISTORY_MAX_ENTRIES;
         state.entries.splice(0, overflow);
+        state.minIndex = Math.max(0, state.minIndex - overflow);
       }
       state.index = state.entries.length - 1;
     },
+    setUndoBoundary(){
+      state.minIndex = state.index;
+    },
     canUndo(){
-      return state.index > 0;
+      return state.index > state.minIndex;
     },
     canRedo(){
       return state.index < state.entries.length - 1;
@@ -3943,31 +3967,52 @@ function createTravelsEditorHistory(initialSnapshot){
     if (!travels || typeof travels.setState !== 'function' || typeof travels.getState !== 'function'){
       return null;
     }
+    let position = 0;
+    let size = 1;
+    let minPosition = 0;
     return {
       push(snapshot){
         const next = cloneEditorSnapshot(snapshot);
         const current = cloneEditorSnapshot(travels.getState());
         if (snapshotsEqual(current, next)) return;
+        const oldPosition = position;
         travels.setState(next);
+        let nextSize = oldPosition + 2;
+        let nextPosition = oldPosition + 1;
+        if (nextSize > EDITOR_HISTORY_MAX_ENTRIES){
+          const overflow = nextSize - EDITOR_HISTORY_MAX_ENTRIES;
+          nextSize = EDITOR_HISTORY_MAX_ENTRIES;
+          nextPosition = Math.max(0, nextPosition - overflow);
+          minPosition = Math.max(0, minPosition - overflow);
+        }
+        size = nextSize;
+        position = nextPosition;
+      },
+      setUndoBoundary(){
+        minPosition = position;
       },
       canUndo(){
+        if (position <= minPosition) return false;
         if (typeof travels.canBack === 'function') return !!travels.canBack();
-        return true;
+        return position > 0;
       },
       canRedo(){
+        if (position >= size - 1) return false;
         if (typeof travels.canForward === 'function') return !!travels.canForward();
-        return true;
+        return position < size - 1;
       },
       undo(){
         if (typeof travels.back !== 'function') return null;
         if (!this.canUndo()) return null;
         travels.back();
+        position = Math.max(0, position - 1);
         return cloneEditorSnapshot(travels.getState());
       },
       redo(){
         if (typeof travels.forward !== 'function') return null;
         if (!this.canRedo()) return null;
         travels.forward();
+        position = Math.min(size - 1, position + 1);
         return cloneEditorSnapshot(travels.getState());
       }
     };
@@ -3982,6 +4027,7 @@ function createEditorHistory(initialSnapshot){
 
 function resetEditorHistoryFromEditor(){
   if (!editor) return;
+  resetEditorHistoryCompositionState();
   editorHistory = createEditorHistory(captureEditorSnapshot());
 }
 
@@ -3996,6 +4042,14 @@ function pushEditorHistorySnapshot(){
   history?.push(captureEditorSnapshot());
 }
 
+function checkpointEditorHistoryFromEditor(){
+  if (!editor || editorHistoryReplaying) return;
+  const history = ensureEditorHistory();
+  if (!history) return;
+  history.push(captureEditorSnapshot());
+  history.setUndoBoundary?.();
+}
+
 function applySnapshotFromHistory(snapshot){
   if (!editor || !snapshot) return false;
   const next = cloneEditorSnapshot(snapshot);
@@ -4003,6 +4057,7 @@ function applySnapshotFromHistory(snapshot){
   const nextStart = Math.max(0, Math.min(max, next.selectionStart));
   const nextEnd = Math.max(0, Math.min(max, next.selectionEnd));
   const nextScrollTop = Math.max(0, next.scrollTop);
+  resetEditorHistoryCompositionState();
   editorHistoryReplaying = true;
   try {
     editor.value = next.text;
@@ -4036,6 +4091,7 @@ function redoEditorHistory(){
 function getUndoRedoAction(event){
   if (!event || !editor) return null;
   if (document.activeElement !== editor) return null;
+  if (editorHistoryCompositionActive) return null;
   if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
   const key = String(event.key || '').toLowerCase();
   if (key === 'z'){
@@ -4600,12 +4656,36 @@ editor.addEventListener('scroll', () => {
 /* =====================
    Mode / Theme toggles
    ===================== */
-editor.addEventListener('input', () => {
+editor.addEventListener('input', (event) => {
   render();
   storageSetItem(LS_CONTENT, editor.value);
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
+  if (isCompositionInputEvent(event)) {
+    editorHistoryCompositionDirty = true;
+    return;
+  }
+  editorHistoryCompositionPendingCommit = false;
+  editorHistoryCompositionDirty = false;
   pushEditorHistorySnapshot();
+});
+
+editor.addEventListener('compositionstart', () => {
+  editorHistoryCompositionActive = true;
+  editorHistoryCompositionDirty = false;
+  editorHistoryCompositionPendingCommit = false;
+});
+
+editor.addEventListener('compositionend', () => {
+  editorHistoryCompositionActive = false;
+  if (!editorHistoryCompositionDirty) return;
+  editorHistoryCompositionPendingCommit = true;
+  Promise.resolve().then(() => {
+    if (editorHistoryCompositionActive || !editorHistoryCompositionPendingCommit) return;
+    editorHistoryCompositionPendingCommit = false;
+    editorHistoryCompositionDirty = false;
+    pushEditorHistorySnapshot();
+  });
 });
 
 modeToggle?.addEventListener('change', () => {
