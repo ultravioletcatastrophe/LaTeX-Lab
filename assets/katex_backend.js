@@ -3854,8 +3854,204 @@ function clampInt(v, min, max){
   return Math.max(min, Math.min(max, isNaN(v) ? min : v));
 }
 
+const EDITOR_HISTORY_MAX_ENTRIES = 400;
+let editorHistory = null;
+let editorHistoryReplaying = false;
+
+function cloneEditorSnapshot(snapshot){
+  return {
+    text: String(snapshot?.text ?? ''),
+    selectionStart: Number(snapshot?.selectionStart) || 0,
+    selectionEnd: Number(snapshot?.selectionEnd) || 0,
+    scrollTop: Math.max(0, Number(snapshot?.scrollTop) || 0)
+  };
+}
+
+function captureEditorSnapshot(){
+  if (!editor) return cloneEditorSnapshot();
+  return cloneEditorSnapshot({
+    text: editor.value,
+    selectionStart: editor.selectionStart,
+    selectionEnd: editor.selectionEnd,
+    scrollTop: editor.scrollTop
+  });
+}
+
+function snapshotsEqual(a, b){
+  if (!a || !b) return false;
+  return a.text === b.text
+    && a.selectionStart === b.selectionStart
+    && a.selectionEnd === b.selectionEnd
+    && a.scrollTop === b.scrollTop;
+}
+
+function resolveTravelsFactory(){
+  const direct = window?.createTravels;
+  if (typeof direct === 'function') return direct;
+  const namespaced = window?.Travels?.createTravels;
+  if (typeof namespaced === 'function') return namespaced;
+  return null;
+}
+
+function createFallbackEditorHistory(initialSnapshot){
+  const state = {
+    entries: [cloneEditorSnapshot(initialSnapshot)],
+    index: 0
+  };
+
+  return {
+    push(snapshot){
+      const next = cloneEditorSnapshot(snapshot);
+      const current = state.entries[state.index];
+      if (snapshotsEqual(current, next)) return;
+      if (state.index < state.entries.length - 1){
+        state.entries.splice(state.index + 1);
+      }
+      state.entries.push(next);
+      if (state.entries.length > EDITOR_HISTORY_MAX_ENTRIES){
+        const overflow = state.entries.length - EDITOR_HISTORY_MAX_ENTRIES;
+        state.entries.splice(0, overflow);
+      }
+      state.index = state.entries.length - 1;
+    },
+    canUndo(){
+      return state.index > 0;
+    },
+    canRedo(){
+      return state.index < state.entries.length - 1;
+    },
+    undo(){
+      if (!this.canUndo()) return null;
+      state.index -= 1;
+      return cloneEditorSnapshot(state.entries[state.index]);
+    },
+    redo(){
+      if (!this.canRedo()) return null;
+      state.index += 1;
+      return cloneEditorSnapshot(state.entries[state.index]);
+    }
+  };
+}
+
+function createTravelsEditorHistory(initialSnapshot){
+  const createTravels = resolveTravelsFactory();
+  if (!createTravels) return null;
+  try {
+    const travels = createTravels(cloneEditorSnapshot(initialSnapshot), {
+      maxHistory: EDITOR_HISTORY_MAX_ENTRIES
+    });
+    if (!travels || typeof travels.setState !== 'function' || typeof travels.getState !== 'function'){
+      return null;
+    }
+    return {
+      push(snapshot){
+        const next = cloneEditorSnapshot(snapshot);
+        const current = cloneEditorSnapshot(travels.getState());
+        if (snapshotsEqual(current, next)) return;
+        travels.setState(next);
+      },
+      canUndo(){
+        if (typeof travels.canBack === 'function') return !!travels.canBack();
+        return true;
+      },
+      canRedo(){
+        if (typeof travels.canForward === 'function') return !!travels.canForward();
+        return true;
+      },
+      undo(){
+        if (typeof travels.back !== 'function') return null;
+        if (!this.canUndo()) return null;
+        travels.back();
+        return cloneEditorSnapshot(travels.getState());
+      },
+      redo(){
+        if (typeof travels.forward !== 'function') return null;
+        if (!this.canRedo()) return null;
+        travels.forward();
+        return cloneEditorSnapshot(travels.getState());
+      }
+    };
+  } catch(err) {
+    return null;
+  }
+}
+
+function createEditorHistory(initialSnapshot){
+  return createTravelsEditorHistory(initialSnapshot) || createFallbackEditorHistory(initialSnapshot);
+}
+
+function resetEditorHistoryFromEditor(){
+  if (!editor) return;
+  editorHistory = createEditorHistory(captureEditorSnapshot());
+}
+
+function ensureEditorHistory(){
+  if (!editorHistory) resetEditorHistoryFromEditor();
+  return editorHistory;
+}
+
+function pushEditorHistorySnapshot(){
+  if (!editor || editorHistoryReplaying) return;
+  const history = ensureEditorHistory();
+  history?.push(captureEditorSnapshot());
+}
+
+function applySnapshotFromHistory(snapshot){
+  if (!editor || !snapshot) return false;
+  const next = cloneEditorSnapshot(snapshot);
+  const max = next.text.length;
+  const nextStart = Math.max(0, Math.min(max, next.selectionStart));
+  const nextEnd = Math.max(0, Math.min(max, next.selectionEnd));
+  const nextScrollTop = Math.max(0, next.scrollTop);
+  editorHistoryReplaying = true;
+  try {
+    editor.value = next.text;
+    editor.selectionStart = nextStart;
+    editor.selectionEnd = nextEnd;
+    editor.scrollTop = nextScrollTop;
+    syncEditorMutation({ deltaFirst: true, skipHistory: true });
+    editor.scrollTop = nextScrollTop;
+  } finally {
+    editorHistoryReplaying = false;
+  }
+  return true;
+}
+
+function undoEditorHistory(){
+  const history = ensureEditorHistory();
+  if (!history) return false;
+  const snapshot = history.undo();
+  if (!snapshot) return false;
+  return applySnapshotFromHistory(snapshot);
+}
+
+function redoEditorHistory(){
+  const history = ensureEditorHistory();
+  if (!history) return false;
+  const snapshot = history.redo();
+  if (!snapshot) return false;
+  return applySnapshotFromHistory(snapshot);
+}
+
+function getUndoRedoAction(event){
+  if (!event || !editor) return null;
+  if (document.activeElement !== editor) return null;
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const key = String(event.key || '').toLowerCase();
+  if (key === 'z'){
+    return event.shiftKey ? 'redo' : 'undo';
+  }
+  if (key === 'y' && !event.shiftKey){
+    return 'redo';
+  }
+  return null;
+}
+
+resetEditorHistoryFromEditor();
+
 function syncEditorMutation(options = {}){
   const deltaFirst = options.deltaFirst === true;
+  const skipHistory = options.skipHistory === true;
   render();
   updateAllRemoteCarets();
   storageSetItem(LS_CONTENT, editor.value);
@@ -3865,10 +4061,12 @@ function syncEditorMutation(options = {}){
   if (deltaFirst){
     sendDeltaIfNeeded();
     broadcastCursorPosition();
+    if (!skipHistory) pushEditorHistorySnapshot();
     return;
   }
   broadcastCursorPosition();
   sendDeltaIfNeeded();
+  if (!skipHistory) pushEditorHistorySnapshot();
 }
 
 function insertAtCursor(text){
@@ -4300,6 +4498,7 @@ clearBtn?.addEventListener('click', () => {
   updateAllRemoteCarets();
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
+  pushEditorHistorySnapshot();
 });
 
 /* =====================
@@ -4406,6 +4605,7 @@ editor.addEventListener('input', () => {
   storageSetItem(LS_CONTENT, editor.value);
   if (!Collab.isApplying()) Collab.sendDelta();
   broadcastCursorPosition();
+  pushEditorHistorySnapshot();
 });
 
 modeToggle?.addEventListener('change', () => {
@@ -4435,6 +4635,13 @@ if (darkToggle) {
    ===================== */
 editor.addEventListener('keydown', () => {
   requestAnimationFrame(updateSelfCaretCursor);
+});
+editor.addEventListener('keydown', (e) => {
+  const action = getUndoRedoAction(e);
+  if (!action) return;
+  e.preventDefault();
+  e.stopPropagation();
+  action === 'undo' ? undoEditorHistory() : redoEditorHistory();
 });
 editor.addEventListener('keydown', (e) => {
   if (e.key !== 'Tab') return;
@@ -5227,6 +5434,7 @@ window.addEventListener('load', () => {
   applyModeUi(mode);
   Guides.syncOverlayAndMirror();
   render();
+  resetEditorHistoryFromEditor();
   renderPresenceList();
   requestAnimationFrame(() => {
     Guides.scheduleRebuild();

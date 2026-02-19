@@ -846,6 +846,77 @@ test('Backspace removes paired delimiters as a unit', () => {
   }
 });
 
+test('Ctrl/Cmd+Z and redo shortcuts traverse local editor history', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'alpha';
+  editor.selectionStart = 5;
+  editor.selectionEnd = 5;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  editor.value = 'alpha beta';
+  editor.selectionStart = 10;
+  editor.selectionEnd = 10;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'alpha');
+  assert.equal(editor.selectionStart, 5);
+  assert.equal(editor.selectionEnd, 5);
+
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'alpha beta');
+  assert.equal(editor.selectionStart, 10);
+  assert.equal(editor.selectionEnd, 10);
+
+  dispatchKeydown(editor, 'z', { metaKey: true });
+  assert.equal(editor.value, 'alpha');
+  dispatchKeydown(editor, 'z', { metaKey: true, shiftKey: true });
+  assert.equal(editor.value, 'alpha beta');
+});
+
+test('undo/redo restores scripted pairing edits done via syncEditorMutation', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+
+  editor.value = 'xy';
+  editor.selectionStart = 1;
+  editor.selectionEnd = 1;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  dispatchKeydown(editor, '$');
+  assert.equal(editor.value, 'x$$y');
+
+  dispatchKeydown(editor, 'z', { ctrlKey: true });
+  assert.equal(editor.value, 'xy');
+  assert.equal(editor.selectionStart, 1);
+  assert.equal(editor.selectionEnd, 1);
+
+  dispatchKeydown(editor, 'y', { ctrlKey: true });
+  assert.equal(editor.value, 'x$$y');
+  assert.equal(editor.selectionStart, 2);
+  assert.equal(editor.selectionEnd, 2);
+});
+
+test('redo shortcut prevents browser default even when no redo is available', () => {
+  const app = loadBackend();
+  const editor = app.elements.get('editor');
+  editor.focus();
+  editor.value = 'stable';
+  editor.selectionStart = 6;
+  editor.selectionEnd = 6;
+  editor.dispatchEvent({ type: 'input', target: editor });
+
+  const cmdResult = editor.dispatchEvent({ type: 'keydown', key: 'y', metaKey: true });
+  const ctrlResult = editor.dispatchEvent({ type: 'keydown', key: 'y', ctrlKey: true });
+  assert.equal(cmdResult, false);
+  assert.equal(ctrlResult, false);
+  assert.equal(editor.value, 'stable');
+});
+
 test('cursor and scroll persistence writes on keyup, input, and click', () => {
   const app = loadBackend();
   const editor = app.elements.get('editor');
