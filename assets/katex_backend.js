@@ -287,7 +287,7 @@ function lineEndIndex(starts, line, textLength){
   return Math.max(starts[line], nextStart);
 }
 
-const EDITOR_CARET_STYLE_PROPS = [
+const TEXTAREA_CARET_STYLE_PROPS = [
   'direction','boxSizing','width','height','overflowX','overflowY',
   'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
   'paddingTop','paddingRight','paddingBottom','paddingLeft',
@@ -314,36 +314,26 @@ function ensureEditorCaretMirror(){
   return mirror;
 }
 
-function getEditorCaretCoordinates(index){
-  if (!editor) return null;
-  const mirror = ensureEditorCaretMirror();
-  if (!mirror) return null;
-
-  const textarea = editor;
+function measureTextareaCaretCoordinates(textarea, mirror, index){
+  if (!textarea || !mirror) return null;
   const text = textarea.value || '';
   const clamped = clampCursorIndex(index, text.length);
   const style = getComputedStyle(textarea);
 
-  EDITOR_CARET_STYLE_PROPS.forEach(prop => { mirror.style[prop] = style[prop]; });
+  TEXTAREA_CARET_STYLE_PROPS.forEach(prop => { mirror.style[prop] = style[prop]; });
+  mirror.style.whiteSpace = style.whiteSpace || 'pre-wrap';
+  mirror.style.wordBreak = style.wordBreak || 'break-word';
+  mirror.style.wordWrap = style.wordWrap || style.overflowWrap || 'break-word';
+  mirror.style.overflowWrap = style.overflowWrap || 'break-word';
+  mirror.style.overflow = 'hidden';
 
-  const pl = parseFloat(style.paddingLeft) || 0;
-  const pr = parseFloat(style.paddingRight) || 0;
-  const bt = parseFloat(style.borderTopWidth) || 0;
   const bl = parseFloat(style.borderLeftWidth) || 0;
-
-  const boxSizing = (style.boxSizing || '').toLowerCase();
-  const baseWidth = textarea.clientWidth;
-  const contentWidth = boxSizing === 'border-box' ? baseWidth : baseWidth - pl - pr;
-  mirror.style.width = `${Math.max(0, contentWidth)}px`;
-  mirror.style.whiteSpace = 'pre-wrap';
-  mirror.style.wordBreak = 'break-word';
-  mirror.style.wordWrap = 'break-word';
+  const bt = parseFloat(style.borderTopWidth) || 0;
 
   mirror.textContent = '';
   mirror.appendChild(document.createTextNode(text.slice(0, clamped)));
-
   const marker = document.createElement('span');
-  marker.textContent = '\u200b';
+  marker.textContent = text.slice(clamped) || '.';
   mirror.appendChild(marker);
 
   const left = marker.offsetLeft + bl - textarea.scrollLeft - 1;
@@ -355,6 +345,13 @@ function getEditorCaretCoordinates(index){
 
   mirror.textContent = '';
   return { x: left, y: top, height: lineHeight };
+}
+
+function getEditorCaretCoordinates(index){
+  if (!editor) return null;
+  const mirror = ensureEditorCaretMirror();
+  if (!mirror) return null;
+  return measureTextareaCaretCoordinates(editor, mirror, index);
 }
 
 function getEditorLineHeightPx(){
@@ -1369,14 +1366,6 @@ if (ENABLE_COLLAB) {
   const colorOverrides = new Map();
   const LS_COLORS = key('colors.v1');
 
-  const CARET_STYLE_PROPS = [
-    'direction','boxSizing','width','height','overflowX','overflowY',
-    'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
-    'paddingTop','paddingRight','paddingBottom','paddingLeft',
-    'fontStyle','fontVariant','fontWeight','fontStretch','fontSize','fontSizeAdjust','lineHeight','fontFamily',
-    'textAlign','textTransform','textIndent','textDecoration','letterSpacing','wordSpacing','tabSize','MozTabSize'
-  ];
-
   let caretMirror = null;
 
   const LS_NAME = key('name.v1');
@@ -1850,43 +1839,8 @@ if (ENABLE_COLLAB) {
   }
 
   function getCaretCoordinates(index){
-    const textarea = editor;
-    const text = textarea.value || '';
-    const clamped = Math.max(0, Math.min(index, text.length));
     const mirror = ensureCaretMirror();
-    const style = getComputedStyle(textarea);
-
-    CARET_STYLE_PROPS.forEach(prop => { mirror.style[prop] = style[prop]; });
-
-    const pl = parseFloat(style.paddingLeft)  || 0;
-    const bt = parseFloat(style.borderTopWidth)  || 0;
-    const bl = parseFloat(style.borderLeftWidth) || 0;
-
-    const boxSizing = (style.boxSizing || '').toLowerCase();
-    const baseWidth = textarea.clientWidth;
-    const contentWidth = boxSizing === 'border-box' ? baseWidth : baseWidth - pl - (parseFloat(style.paddingRight) || 0);
-    mirror.style.width = Math.max(0, contentWidth) + 'px';
-    mirror.style.whiteSpace = 'pre-wrap';
-    mirror.style.wordBreak  = 'break-word';
-    mirror.style.wordWrap   = 'break-word';
-
-    mirror.textContent = '';
-    mirror.appendChild(document.createTextNode(text.slice(0, clamped)));
-
-    const marker = document.createElement('span');
-    marker.textContent = '\u200b';
-    mirror.appendChild(marker);
-
-    const left = marker.offsetLeft + bl - textarea.scrollLeft - 1;
-    const top  = marker.offsetTop  + bt - textarea.scrollTop - 1;
-
-    const lh = parseFloat(style.lineHeight);
-    const fs = parseFloat(style.fontSize) || 16;
-    const lineHeight = Number.isFinite(lh) ? lh : Math.round(fs * 1.2);
-
-    mirror.textContent = '';
-
-    return { x: left, y: top, height: lineHeight };
+    return measureTextareaCaretCoordinates(editor, mirror, index);
   }
 
   function shiftRemoteCarets(delta) {
