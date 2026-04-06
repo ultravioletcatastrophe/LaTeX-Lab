@@ -2390,8 +2390,7 @@ if (ENABLE_COLLAB) {
       const payload = {
         joinedAt: joinTimestamp,
         name: displayName.trim(),
-        color: getSelfColorHex(),
-        macros: normalizeMacros(MACROS)
+        color: getSelfColorHex()
       };
       if (requestReply) payload.requestReply = 1;
       emitInternal('hello', payload);
@@ -2641,6 +2640,9 @@ if (ENABLE_COLLAB) {
 
       if (payload.kind === 'macros') {
         const reason = payload.reason || '';
+        if (reason === 'join') {
+          return;
+        }
         const fromHost = payload.owner === 1;
         const replaceReasons = new Set(['save','reset','save-empty','union','hello-union']);
         let changed = false;
@@ -2673,9 +2675,6 @@ if (ENABLE_COLLAB) {
       if (payload.kind === 'hello') {
         if (typeof payload.name === 'string') updatePeerName(safeKey, payload.name);
         if (typeof payload.joinedAt === 'number') updatePeerJoinTime(senderId || safeKey, payload.joinedAt);
-        if (payload.macros && mergeMacrosFromPeer(payload.macros) && isRoomOwner) {
-          sendMacros('hello-union');
-        }
         if (payload.requestReply && senderId) {
           broadcastJoinInfo(false);
         }
@@ -2814,7 +2813,10 @@ if (ENABLE_COLLAB) {
       }
 
       if (data.macros && typeof data.macros === 'object') {
-        mergeMacrosFromPeer(data.macros);
+        const macrosChanged = (typeof data.owner === 'number' && data.owner === 1)
+          ? replaceMacrosFromPeer(data.macros)
+          : mergeMacrosFromPeer(data.macros);
+        if (macrosChanged) stateChanged = true;
       }
 
       if (data.mode === 'classic' || data.mode === 'mixed') {
@@ -3115,7 +3117,6 @@ if (ENABLE_COLLAB) {
       }
 
       sendCursorState(true);
-      sendMacros('join');
 
       storageSetItem(LS_ROOM, roomName);
     }

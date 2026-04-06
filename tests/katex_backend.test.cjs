@@ -737,6 +737,95 @@ test('collab macros updates merge by default and replace on save/reset reasons',
   assert.deepEqual(toPlain(app.hooks.getMACROS()), { '\\X': 'x' });
 });
 
+test('collab ignores peer bootstrap macros from hello/join and does not send join macros', async () => {
+  const rig = createFakeJoinRoom();
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  app.hooks.setMACROS({ '\\HOST': 'host-only' });
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+  const localInfo = toPlain(app.hooks.collabHostInfo());
+  const localTs = localInfo.joinTimestamp;
+
+  assert.equal(
+    room.sent.some((payload) => payload.kind === 'macros' && payload.reason === 'join'),
+    false
+  );
+
+  room.emitJoin('peer-a');
+  room.emitState(
+    {
+      kind: 'hello',
+      from: 'peer-a',
+      joinedAt: localTs + 10,
+      macros: {
+        '\\GUEST': 'guest-only'
+      }
+    },
+    'peer-a'
+  );
+
+  assert.deepEqual(toPlain(app.hooks.getMACROS()), { '\\HOST': 'host-only' });
+
+  const fullPayload = room.sent
+    .slice()
+    .reverse()
+    .find((payload) => payload.kind === 'full');
+  assert.ok(fullPayload);
+  assert.deepEqual(toPlain(fullPayload.macros), { '\\HOST': 'host-only' });
+
+  room.emitState(
+    {
+      kind: 'macros',
+      from: 'peer-a',
+      owner: 0,
+      reason: 'join',
+      macros: {
+        '\\JOIN': 'join-only'
+      }
+    },
+    'peer-a'
+  );
+
+  assert.deepEqual(toPlain(app.hooks.getMACROS()), { '\\HOST': 'host-only' });
+});
+
+test('collab full sync replaces stale local macros', async () => {
+  const rig = createFakeJoinRoom({ 'peer-host': {} });
+  const app = loadBackend({
+    collab: true,
+    shareStateLink: false,
+    testJoinRoom: rig.joinRoom
+  });
+  app.hooks.setMACROS({
+    '\\LOCAL': 'local-only',
+    '\\SHARED': 'old-local'
+  });
+  await app.hooks.collabJoin('room-a');
+  const room = rig.rooms[0];
+
+  room.emitState(
+    {
+      kind: 'full',
+      from: 'peer-host',
+      owner: 1,
+      host: 'peer-host',
+      joinedAt: 1,
+      text: 'remote text',
+      mode: 'mixed',
+      macros: {
+        '\\SHARED': 'remote-shared'
+      }
+    },
+    'peer-host'
+  );
+
+  assert.deepEqual(toPlain(app.hooks.getMACROS()), { '\\SHARED': 'remote-shared' });
+});
+
 test('collab host election uses earliest join time and lexical peer id tie-breaker', async () => {
   const rig = createFakeJoinRoom();
   const app = loadBackend({
