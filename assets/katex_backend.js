@@ -63,7 +63,7 @@ const exportPngOption = document.getElementById('exportPngOption');
 const exportPdfOption = document.getElementById('exportPdfOption');
 const exportCancel = document.getElementById('exportCancel');
 const clearBtn = document.getElementById('clearBtn');
-const shareBtn = document.getElementById('shareBtn');
+const stateLinkBtn = document.getElementById('stateLinkBtn');
 
 const snippetsMenu = document.getElementById('snippetsMenu');
 const snippetsBtn = document.getElementById('snippetsBtn');
@@ -5233,8 +5233,8 @@ function tryLoadStateFromHash(){
   return true;
 }
 
-if (SHARE_STATE_LINK && shareBtn) {
-  shareBtn.addEventListener('click', async () => {
+if (SHARE_STATE_LINK && stateLinkBtn) {
+  stateLinkBtn.addEventListener('click', async () => {
     const result = encodeStateToUrl();
     if (!result.ok){
       alert(`Share link is too long (${result.length} characters). Try shortening the document before sharing.`);
@@ -5243,8 +5243,8 @@ if (SHARE_STATE_LINK && shareBtn) {
     const url = result.url;
     try {
       await navigator.clipboard.writeText(url);
-      shareBtn.textContent = '✅ Copied!';
-      setTimeout(() => shareBtn.textContent = '🔗 Share link', 1200);
+      stateLinkBtn.textContent = '✅ Copied!';
+      setTimeout(() => stateLinkBtn.textContent = '🔗 Share link', 1200);
     } catch(e){
       prompt('Copy this link:', url);
     }

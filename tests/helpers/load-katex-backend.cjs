@@ -8,7 +8,7 @@ const ELEMENT_IDS = [
   'editor', 'gutter', 'overlay', 'preview', 'divider', 'leftPane', 'editorWrap', 'measure',
   'modeToggle', 'modeLabel', 'modeDesc', 'darkToggle',
   'exportBtn', 'exportModal', 'exportPngOption', 'exportPdfOption', 'exportCancel',
-  'pngBtn', 'pdfBtn', 'clearBtn', 'shareBtn',
+  'pngBtn', 'pdfBtn', 'clearBtn', 'stateLinkBtn',
   'snippetsMenu', 'snippetsBtn', 'openMatrixGen', 'openTableGen', 'insertCases',
   'matrixModal', 'mRows', 'mCols', 'mSizeGrid', 'mSizeValue', 'mSizeHint', 'mType', 'matrixPrev', 'mCancel', 'mInsert',
   'tableModal', 'tRows', 'tCols', 'tSizeGrid', 'tSizeValue', 'tSizeHint', 'tAlign', 'tBorders', 'tablePrev', 'tCancel', 'tInsert',

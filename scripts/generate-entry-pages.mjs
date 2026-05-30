@@ -21,7 +21,7 @@ const variants = [
       BODY_CLASS: '',
       DATA_COLLAB: 'false',
       DATA_WELCOME: 'corner',
-      TOOLBAR_BEFORE_MACROS: '    <button id="shareBtn" class="menu-button">🔗 Share link</button>',
+      TOOLBAR_BEFORE_MACROS: '    <button id="stateLinkBtn" class="menu-button">🔗 Share link</button>',
       TOOLBAR_AFTER_MACROS: '',
       CENTER_CONTROLS: '',
       JOIN_WARNING_MODAL: '',
