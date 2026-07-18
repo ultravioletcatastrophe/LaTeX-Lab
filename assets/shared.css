@@ -83,11 +83,11 @@ body.dark .menu-button, body.dark button{ background:linear-gradient(#222,#1b1b1
 #leftPane{ flex:0 0 50%; display:flex; min-width:260px; border-right:1px solid var(--border); min-height:0 }
 #gutter{
   width:4.8em; padding-top:.6em; padding-bottom:calc(.6em + var(--mobile-editor-end-pad, 0px)); background:var(--gutter-bg); color:var(--gutter-text);
-  font-family:monospace; font-size:15px; text-align:right; user-select:none; overflow:auto; pointer-events:none;
+  font-family:monospace; font-size:15px; text-align:right; user-select:none; overflow:hidden;
   scrollbar-width: none;
 }
 #gutter::-webkit-scrollbar{ display:none; }
-#gutter .ln{display:block; padding-right:.6em}
+#gutter .ln{display:block; padding-right:.6em; cursor:default}
 /* Single rule handles both themes */
 #gutter .ln:nth-child(odd){ background-color:var(--stripe-light) }
 

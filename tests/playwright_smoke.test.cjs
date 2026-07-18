@@ -52,6 +52,50 @@ async function getEditorValue(page) {
 }
 
 test(
+  'clicking a gutter line number selects the entire logical line',
+  {
+    skip: !PLAYWRIGHT_ENABLED || !playwright,
+    timeout: 90000
+  },
+  async (t) => {
+    if (!PLAYWRIGHT_ENABLED) {
+      t.diagnostic(PLAYWRIGHT_HINT);
+      return;
+    }
+    if (!playwright) {
+      t.diagnostic('Playwright is not installed; skipping browser smoke tests.');
+      return;
+    }
+
+    await withPage({ width: 1280, height: 900 }, async (page) => {
+      await setEditorValue(page, 'first line\nsecond line\nthird line');
+      await page.waitForFunction(() => document.querySelectorAll('#gutter .ln').length === 3);
+      await page.locator('#gutter .ln').nth(1).click();
+
+      const selection = await page.evaluate(() => {
+        const editor = document.getElementById('editor');
+        const lineNumber = document.querySelectorAll('#gutter .ln')[1];
+        return {
+          start: editor.selectionStart,
+          end: editor.selectionEnd,
+          text: editor.value.slice(editor.selectionStart, editor.selectionEnd),
+          focused: document.activeElement === editor,
+          cursor: getComputedStyle(lineNumber).cursor
+        };
+      });
+
+      assert.deepEqual(selection, {
+        start: 11,
+        end: 23,
+        text: 'second line\n',
+        focused: true,
+        cursor: 'default'
+      });
+    });
+  }
+);
+
+test(
   'mobile export menu toggles modal and aria state',
   {
     skip: !PLAYWRIGHT_ENABLED || !playwright,

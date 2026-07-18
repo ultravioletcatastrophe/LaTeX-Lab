@@ -253,6 +253,25 @@ test('isAtBottom correctly detects bottom threshold', () => {
   assert.equal(hooks.isAtBottom({ scrollHeight: 1000, scrollTop: 200, clientHeight: 200 }), false);
 });
 
+test('lineSelectionRange selects a logical line including its trailing newline', () => {
+  const { hooks } = loadBackend();
+  assert.deepEqual(toPlain(hooks.lineSelectionRange('alpha\nbeta\ngamma', 0)), { start: 0, end: 6 });
+  assert.deepEqual(toPlain(hooks.lineSelectionRange('alpha\nbeta\ngamma', 1)), { start: 6, end: 11 });
+  assert.deepEqual(toPlain(hooks.lineSelectionRange('alpha\nbeta\ngamma', 2)), { start: 11, end: 16 });
+  assert.equal(hooks.lineSelectionRange('alpha', 1), null);
+});
+
+test('selectEditorLine focuses the editor and selects the requested whole line', () => {
+  const app = loadBackend();
+  app.hooks.setEditorValue('first\nsecond\nthird');
+  app.hooks.setEditorScrollTop(125);
+
+  assert.equal(app.hooks.selectEditorLine(1), true);
+  assert.deepEqual(toPlain(app.hooks.getEditorSelection()), { start: 6, end: 13 });
+  assert.equal(app.document.activeElement, app.elements.get('editor'));
+  assert.equal(app.elements.get('editor').scrollTop, 125);
+});
+
 test('clampSplitWidth/applySplitWidth enforce desktop min and max widths', () => {
   const app = loadBackend({ mobile: false });
   const { hooks } = app;

@@ -544,6 +544,8 @@ function loadBackend(options = {}) {
   tablePreviewText,
   tableInsertText,
   clampInt,
+  lineSelectionRange,
+  selectEditorLine,
   isAtBottom,
   clampSplitWidth,
   applySplitWidth,

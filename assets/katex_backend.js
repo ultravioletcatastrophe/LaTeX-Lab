@@ -973,6 +973,34 @@ function restoreEscapedDollarPlaceholders(root){
   visit(root);
 }
 
+function lineSelectionRange(text, lineIndex){
+  const value = String(text ?? '');
+  const index = Number(lineIndex);
+  if (!Number.isInteger(index) || index < 0) return null;
+
+  const lines = value.split('\n');
+  if (index >= lines.length) return null;
+
+  let start = 0;
+  for (let i = 0; i < index; i++) start += lines[i].length + 1;
+  const end = start + lines[index].length + (index < lines.length - 1 ? 1 : 0);
+  return { start, end };
+}
+
+function selectEditorLine(lineIndex){
+  if (!editor) return false;
+  const range = lineSelectionRange(editor.value, lineIndex);
+  if (!range) return false;
+
+  const keepScroll = editor.scrollTop;
+  try { editor.focus({ preventScroll: true }); }
+  catch(e) { try { editor.focus(); } catch(_) {} }
+  editor.setSelectionRange(range.start, range.end, 'forward');
+  editor.scrollTop = keepScroll;
+  saveCursorAndScroll();
+  return true;
+}
+
 const Guides = (() => {
   const lineHeightCache = new Map();
   const entries = [];
@@ -1017,6 +1045,7 @@ const Guides = (() => {
     if (entry) return entry;
     const gutterLine = document.createElement('div');
     gutterLine.className = 'ln';
+    gutterLine.dataset.lineIndex = String(index);
     gutter.appendChild(gutterLine);
     const overlayLine = document.createElement('div');
     overlayLine.className = 'overlay-line';
@@ -1105,6 +1134,12 @@ const Guides = (() => {
 
   return { syncOverlayAndMirror, scheduleRebuild, forceRebuild: () => rebuildGuides({ force: true }), invalidateCache };
 })();
+
+gutter?.addEventListener('click', (event) => {
+  const lineNumber = event.target?.closest?.('.ln');
+  if (!lineNumber || !gutter.contains(lineNumber)) return;
+  selectEditorLine(Number(lineNumber.dataset.lineIndex));
+});
 
 function isAtBottom(el, pad = 2){
   return (el.scrollHeight - el.scrollTop - el.clientHeight) <= pad;
